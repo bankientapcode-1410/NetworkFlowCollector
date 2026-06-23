@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: network-flow-collector
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - network-flow-collector:8080
