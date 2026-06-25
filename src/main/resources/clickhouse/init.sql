@@ -25,6 +25,12 @@ CREATE TABLE IF NOT EXISTS flows
     dst_as_org Nullable(String),
     ingest_time DateTime64(3, 'UTC')
 )
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(ts_start)
-ORDER BY (ts_start, flow_id);
+ENGINE = ReplacingMergeTree(ingest_time)
+PARTITION BY toYYYYMMDD(ts_start)
+ORDER BY (toStartOfHour(ts_start), src_ip, dst_ip, dst_port, ts_start, flow_id)
+TTL toDateTime(ts_start) + INTERVAL 90 DAY
+SETTINGS index_granularity = 8192;
+
+ALTER TABLE flows ADD INDEX IF NOT EXISTS idx_src_ip src_ip TYPE bloom_filter(0.01) GRANULARITY 4;
+ALTER TABLE flows ADD INDEX IF NOT EXISTS idx_dst_ip dst_ip TYPE bloom_filter(0.01) GRANULARITY 4;
+ALTER TABLE flows ADD INDEX IF NOT EXISTS idx_flow_id flow_id TYPE bloom_filter(0.01) GRANULARITY 1;

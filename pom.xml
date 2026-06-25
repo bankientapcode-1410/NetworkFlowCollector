@@ -20,7 +20,7 @@
 
     <properties>
         <java.version>21</java.version>
-        <netty.version>4.1.107.Final</netty.version>
+        <netty.version>4.1.133.Final</netty.version>
         <springdoc.version>2.3.0</springdoc.version>
     </properties>
 
@@ -40,6 +40,12 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.clickhouse</groupId>
+            <artifactId>clickhouse-jdbc</artifactId>
+            <version>0.9.8</version>
+            <classifier>all</classifier>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
