@@ -13,6 +13,50 @@ public final class NetFlowNormalizerSupport {
 
     private NetFlowNormalizerSupport() {}
 
+    public static NormalizedFlow normalizeFixedRecord(RawFlowRecord raw, String expectedSourceType, String missingFieldSourceName) {
+        Objects.requireNonNull(raw, "raw");
+        Objects.requireNonNull(missingFieldSourceName, "missingFieldSourceName");
+        if (!expectedSourceType.equals(raw.sourceType())) {
+            throw new IllegalArgumentException("Unsupported source type: " + raw.sourceType());
+        }
+
+        Map<String, Object> fields = raw.fields();
+        Instant tsStart = requiredInstantField(fields, "ts_start", missingFieldSourceName);
+        Instant tsEnd = requiredInstantField(fields, "ts_end", missingFieldSourceName);
+        int protocolNumber = requiredIntField(fields, "protocol_number", missingFieldSourceName);
+        int samplingMode = requiredIntField(fields, "sampling_mode", missingFieldSourceName);
+        int samplingInterval = requiredIntField(fields, "sampling_interval", missingFieldSourceName);
+        Long samplingRate = samplingInterval > 0 ? (long) samplingInterval : null;
+
+        return new NormalizedFlow(
+                fixedRecordFlowId(raw, fields, missingFieldSourceName),
+                tsStart,
+                tsEnd,
+                requiredLongField(fields, "duration_ms", missingFieldSourceName),
+                requiredStringField(fields, "src_ip", missingFieldSourceName),
+                requiredIntField(fields, "src_port", missingFieldSourceName),
+                requiredStringField(fields, "dst_ip", missingFieldSourceName),
+                requiredIntField(fields, "dst_port", missingFieldSourceName),
+                requiredStringField(fields, "protocol", missingFieldSourceName),
+                requiredLongField(fields, "bytes", missingFieldSourceName),
+                requiredLongField(fields, "packets", missingFieldSourceName),
+                protocolNumber == 6
+                        ? requiredIntField(fields, "tcp_flags", missingFieldSourceName)
+                        : null,
+                samplingMode != 0 || samplingInterval > 1,
+                samplingRate,
+                null,
+                raw.sourceType(),
+                raw.exporterIp(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                raw.receivedAt());
+    }
+
     public static NormalizedFlow normalizeFlexibleRecord(RawFlowRecord raw, String expectedSourceType) {
         Objects.requireNonNull(raw, "raw");
         if (!expectedSourceType.equals(raw.sourceType())) {
@@ -72,6 +116,32 @@ public final class NetFlowNormalizerSupport {
                 raw.receivedAt());
     }
 
+    private static UUID fixedRecordFlowId(RawFlowRecord raw, Map<String, Object> fields, String missingFieldSourceName) {
+        String material =
+                raw.sourceType()
+                        + "|"
+                        + raw.exporterIp()
+                        + "|"
+                        + requiredLongField(fields, "flow_sequence", missingFieldSourceName)
+                        + "|"
+                        + requiredIntField(fields, "record_index", missingFieldSourceName)
+                        + "|"
+                        + requiredInstantField(fields, "ts_start", missingFieldSourceName)
+                        + "|"
+                        + requiredInstantField(fields, "ts_end", missingFieldSourceName)
+                        + "|"
+                        + requiredStringField(fields, "src_ip", missingFieldSourceName)
+                        + "|"
+                        + requiredIntField(fields, "src_port", missingFieldSourceName)
+                        + "|"
+                        + requiredStringField(fields, "dst_ip", missingFieldSourceName)
+                        + "|"
+                        + requiredIntField(fields, "dst_port", missingFieldSourceName)
+                        + "|"
+                        + requiredIntField(fields, "protocol_number", missingFieldSourceName);
+        return UUID.nameUUIDFromBytes(material.getBytes(StandardCharsets.UTF_8));
+    }
+
     private static UUID flowId(RawFlowRecord raw, Map<String, Object> fields) {
         String material =
                 raw.sourceType()
@@ -109,6 +179,47 @@ public final class NetFlowNormalizerSupport {
     private static String optionalField(Map<String, Object> fields, String key) {
         Object value = fields.get(key);
         return value == null ? "" : value.toString();
+    }
+
+    private static String requiredStringField(
+            Map<String, Object> fields, String key, String missingFieldSourceName) {
+        return requiredField(fields, key, missingFieldSourceName).toString();
+    }
+
+    private static int requiredIntField(
+            Map<String, Object> fields, String key, String missingFieldSourceName) {
+        Object value = requiredField(fields, key, missingFieldSourceName);
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        return Integer.parseInt(value.toString());
+    }
+
+    private static long requiredLongField(
+            Map<String, Object> fields, String key, String missingFieldSourceName) {
+        Object value = requiredField(fields, key, missingFieldSourceName);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        return Long.parseLong(value.toString());
+    }
+
+    private static Instant requiredInstantField(
+            Map<String, Object> fields, String key, String missingFieldSourceName) {
+        Object value = requiredField(fields, key, missingFieldSourceName);
+        if (value instanceof Instant instant) {
+            return instant;
+        }
+        return Instant.parse(value.toString());
+    }
+
+    private static Object requiredField(
+            Map<String, Object> fields, String key, String missingFieldSourceName) {
+        Object value = fields.get(key);
+        if (value == null) {
+            throw new IllegalArgumentException("Missing " + missingFieldSourceName + " field: " + key);
+        }
+        return value;
     }
 
     private static String stringFieldOrDefault(Map<String, Object> fields, String key, String defaultValue) {

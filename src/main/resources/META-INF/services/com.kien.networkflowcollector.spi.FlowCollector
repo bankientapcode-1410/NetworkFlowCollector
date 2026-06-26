@@ -1,3 +1,4 @@
-com.kien.networkflowcollector.collectors.netflow.v5.NetFlowV5Collector
-com.kien.networkflowcollector.collectors.netflow.v9.NetFlowV9Collector
+com.kien.networkflowcollector.collectors.netflow.NetFlowCollector
 com.kien.networkflowcollector.collectors.netflow.ipfix.IpfixCollector
+com.kien.networkflowcollector.collectors.zeek.ZeekCollector
+com.kien.networkflowcollector.collectors.suricata.SuricataCollector

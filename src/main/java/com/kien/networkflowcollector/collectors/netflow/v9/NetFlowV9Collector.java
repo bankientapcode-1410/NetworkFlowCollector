@@ -6,9 +6,7 @@ import io.netty.buffer.ByteBuf;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
-import org.springframework.stereotype.Component;
 
-@Component
 public class NetFlowV9Collector extends UdpFlowCollectorSupport {
 
     private static final int DEFAULT_PORT = 2055;

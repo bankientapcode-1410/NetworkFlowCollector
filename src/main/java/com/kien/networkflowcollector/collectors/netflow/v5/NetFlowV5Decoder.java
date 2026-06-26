@@ -1,5 +1,6 @@
 package com.kien.networkflowcollector.collectors.netflow.v5;
 
+import com.kien.networkflowcollector.collectors.netflow.NetFlowProtocolSupport;
 import com.kien.networkflowcollector.spi.RawFlowRecord;
 import io.netty.buffer.ByteBuf;
 import java.time.Instant;
@@ -51,7 +52,7 @@ public class NetFlowV5Decoder {
         int sampling = packet.getUnsignedShort(base + 22);
         int samplingMode = sampling >>> 14;
         int samplingInterval = sampling & 0x3fff;
-        Instant exportTime = NetFlowV5Protocol.exportTime(unixSeconds, unixNanos);
+        Instant exportTime = NetFlowProtocolSupport.exportTime(unixSeconds, unixNanos);
 
         List<RawFlowRecord> out = new ArrayList<>(recordCount);
         for (int i = 0; i < recordCount; i++) {
@@ -111,23 +112,29 @@ public class NetFlowV5Decoder {
         fields.put("engine_id", engineId);
         fields.put("sampling_mode", samplingMode);
         fields.put("sampling_interval", samplingInterval);
-        fields.put("src_ip", NetFlowV5Protocol.ipv4(packet.getUnsignedInt(offset)));
-        fields.put("dst_ip", NetFlowV5Protocol.ipv4(packet.getUnsignedInt(offset + 4)));
-        fields.put("next_hop", NetFlowV5Protocol.ipv4(packet.getUnsignedInt(offset + 8)));
+        fields.put("src_ip", NetFlowProtocolSupport.ipv4(packet.getUnsignedInt(offset)));
+        fields.put("dst_ip", NetFlowProtocolSupport.ipv4(packet.getUnsignedInt(offset + 4)));
+        fields.put("next_hop", NetFlowProtocolSupport.ipv4(packet.getUnsignedInt(offset + 8)));
         fields.put("input_snmp", packet.getUnsignedShort(offset + 12));
         fields.put("output_snmp", packet.getUnsignedShort(offset + 14));
         fields.put("packets", packet.getUnsignedInt(offset + 16));
         fields.put("bytes", packet.getUnsignedInt(offset + 20));
         fields.put("first_switched_ms", firstSwitchedMillis);
         fields.put("last_switched_ms", lastSwitchedMillis);
-        fields.put("ts_start", NetFlowV5Protocol.switchedTime(exportTime, sysUptimeMillis, firstSwitchedMillis));
-        fields.put("ts_end", NetFlowV5Protocol.switchedTime(exportTime, sysUptimeMillis, lastSwitchedMillis));
-        fields.put("duration_ms", NetFlowV5Protocol.durationMillis(firstSwitchedMillis, lastSwitchedMillis));
+        fields.put(
+                "ts_start",
+                NetFlowProtocolSupport.switchedTime(exportTime, sysUptimeMillis, firstSwitchedMillis));
+        fields.put(
+                "ts_end",
+                NetFlowProtocolSupport.switchedTime(exportTime, sysUptimeMillis, lastSwitchedMillis));
+        fields.put(
+                "duration_ms",
+                NetFlowProtocolSupport.durationMillis(firstSwitchedMillis, lastSwitchedMillis));
         fields.put("src_port", packet.getUnsignedShort(offset + 32));
         fields.put("dst_port", packet.getUnsignedShort(offset + 34));
         fields.put("tcp_flags", (int) packet.getUnsignedByte(offset + 37));
         fields.put("protocol_number", protocolNumber);
-        fields.put("protocol", NetFlowV5Protocol.protocolName(protocolNumber));
+        fields.put("protocol", NetFlowProtocolSupport.protocolName(protocolNumber));
         fields.put("tos", (int) packet.getUnsignedByte(offset + 39));
         fields.put("src_as", packet.getUnsignedShort(offset + 40));
         fields.put("dst_as", packet.getUnsignedShort(offset + 42));
