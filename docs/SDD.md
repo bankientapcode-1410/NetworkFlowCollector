@@ -682,7 +682,7 @@ Dịch vụ tiêu thụ `raw-flows` theo consumer group và chuyển từng `Raw
 ### **4.2.1 Quy tắc validation và enrichment**
 
 * `ts_start` và `ts_end` phải là UTC, `ts_start ≤ ts_end`; `duration_ms` được tính lại từ hai timestamp thay vì tin giá trị do nguồn gửi. Timestamp tương lai quá `max-clock-skew` hoặc cũ hơn giới hạn retention bị xem là lỗi dữ liệu.
-* Với protocol không dùng port (ví dụ ICMP), normalizer gán port bằng `0`. `tcp_flags` phải null khi nguồn không cung cấp hoặc flow không phải TCP; khi có giá trị, bitmask phải nằm trong khoảng `0..65535` để hỗ trợ cả trường 8 bit của NetFlow v5 và `tcpControlBits` 16 bit của IPFIX.
+* Với protocol không dùng port (ví dụ ICMP), normalizer gán port bằng `0`. `tcp_flags` phải null khi nguồn không cung cấp hoặc flow không phải TCP; khi có giá trị, bitmask phải nằm trong khoảng `0..65535` để hỗ trợ cả trường 8 bit của NetFlow v5 và trường 16 bit của NetFlow v9.
 * `sampled=false` yêu cầu `sampling_rate` và `sample_pool` là null. `sampled=true` yêu cầu `sampling_rate > 0`; không nhân `bytes_total`/`packets_total` với sampling rate vì đây vẫn là số quan sát được.
 * Không tìm thấy GeoIP/ASN, IP private/loopback/link-local hoặc enrichment bị tắt thì các trường enrichment nhận null. Lỗi đọc DB enrichment không làm flow vào DLQ: service giữ flow chưa enrichment, tăng `nfc_enrichment_error_total{database}` và chuyển health sang `DEGRADED` nếu lỗi kéo dài.
 * DB MaxMind được nạp lại atomically khi cập nhật; cache lookup có kích thước/TTL giới hạn. Phiên bản DB dùng cho batch được ghi trong structured log/metric để có thể giải thích sai khác khi replay.
@@ -848,10 +848,10 @@ Không đưa incremental Materialized View vào baseline hoặc sơ đồ triể
 | bytes\_total       | integer          | ✅        | Tổng số byte                                                                                            |
 | packets\_total     | integer          | ✅        | Tổng số gói                                                                                             |
 | tcp\_flags         | integer          | ❌        | Bitmask cờ TCP trong khoảng 0–65535                                                                     |
-| sampled            | boolean          | ✅        | `true` nếu bản ghi đến từ cơ chế lấy mẫu như sFlow                                                      |
-| sampling\_rate     | integer          | ❌        | Tỷ lệ lấy mẫu sFlow (ví dụ 1000 tương ứng 1/1000)                                                       |
-| sample\_pool       | integer          | ❌        | Kích thước sample pool do sFlow agent báo cáo                                                           |
-| source\_type       | string           | ✅        | Nguồn: netflow-v5, netflow-v9, ipfix, sflow-v5, zeek-json, suricata-json, syslog-cef, syslog-leef, rest |
+| sampled            | boolean          | ✅        | `true` nếu bản ghi đến từ cơ chế lấy mẫu (sampling)                                                         |
+| sampling\_rate     | integer          | ❌        | Tỷ lệ lấy mẫu (ví dụ 1000 tương ứng 1/1000)                                                                    |
+| sample\_pool       | integer          | ❌        | Kích thước sample pool do agent báo cáo                                                                        |
+| source\_type       | string           | ✅        | Nguồn: netflow-v5, netflow-v9, zeek-json, suricata-json, syslog-cef, syslog-leef, rest                  |
 | exporter\_ip       | string           | ✅        | IP thiết bị xuất flow                                                                                   |
 | src\_country\_code | string           | ❌        | Mã quốc gia ISO 3166-1 alpha-2 của IP nguồn                                                             |
 | src\_asn           | integer          | ❌        | Autonomous System Number của IP nguồn                                                                   |
@@ -1210,7 +1210,7 @@ base \= 200ms, maxDelay \= 30s, maxAttempts \= 8
 | Kafka consumer     | Kafka committed offset (\_\_consumer\_offsets)                                      |
 | Zeek/Suricata file | Checkpoint file/DB lưu byte offset đã đọc                                           |
 | NetFlow (UDP)      | Không có offset (UDP stateless) → dựa vào idempotency \+ buffer queue               |
-| sFlow (UDP)        | Không có offset (UDP stateless); theo dõi sequence number để phát hiện mất datagram |
+
 
 ```mermaid
 ---
@@ -1360,7 +1360,7 @@ Health tổng hợp đọc snapshot `CollectorHealth` của từng plugin theo m
 | nfc\_enrichment\_error\_total{database}             | Counter   | Số lỗi đọc cơ sở dữ liệu enrichment; flow vẫn được lưu với trường enrichment null                                               |
 | nfc\_dlq\_total{source\_type,reason}                | Counter   | Số bản ghi đã được Kafka xác nhận ghi vào DLQ, phân loại bằng reason lowercase hữu hạn; source type lạ dùng label `unsupported` |
 | nfc\_normalizer\_coverage\_missing                  | Gauge     | Số source type trong `META-INF/nfc/source-types.json` chưa có normalizer; `0` khi coverage hợp lệ                               |
-| nfc\_template\_missing\_total                       | Counter   | Data đến trước template (v9/IPFIX)                                                                                              |
+| nfc\_template\_missing\_total                       | Counter   | Data đến trước template (v9)                                                                                                      |
 | nfc\_kafka\_consumer\_lag                           | Gauge     | Độ trễ consumer (tồn đọng)                                                                                                      |
 | nfc\_normalization\_batch\_duration\_ms             | Histogram | Phân phối thời gian xử lý một batch normalization                                                                               |
 | nfc\_clickhouse\_insert\_duration\_ms               | Histogram | Phân phối thời gian ClickHouse xác nhận một batch insert                                                                        |
@@ -1491,7 +1491,6 @@ flowchart LR
         subgraph Collectors["ingestion-collectors<br/>(JVM, Netty)"]
             direction TB
             NetFlow["netflow :2055/udp"]
-            SFlow["sflow :6343/udp"]
             Syslog["syslog (optional)<br/>:514/udp,tcp"]
             Zeek["zeek-tail (volume)"]
             RestIngest["rest-ingest :8081"]
@@ -1519,7 +1518,7 @@ flowchart LR
     ZeekVolume["Host bind mount<br/>./zeek → /var/log/zeek:ro"]
     Client["API Client / Analyst"]
 
-    Mock -->|"NetFlow/sFlow packets"| Collectors
+    Mock -->|"NetFlow packets"| Collectors
     Mock -->|"append NDJSON"| ZeekVolume
     ZeekVolume --> Zeek
     Collectors --> RawFlows
@@ -1563,7 +1562,7 @@ services:
       ZEEK\_LOG\_PATH: "/var/log/zeek/conn.log"  
     ports:  
       \- "2055:2055/udp"   \# NetFlow  
-      \- "6343:6343/udp"   \# sFlow  
+
       \- "514:514/udp"     \# Syslog UDP  
       \- "514:514/tcp"     \# Syslog TCP  
       \- "8081:8081"       \# REST ingest
@@ -1602,7 +1601,7 @@ volumes:
 | Cổng | Service | Mục đích |
 | ----- | ----- | ----- |
 | 2055/udp | collectors | Nhận NetFlow |
-| 6343/udp | collectors | Nhận sFlow |
+
 | 514/udp,tcp | collectors | Nhận Syslog |
 | 8081 | collectors | REST ingest |
 | 8080 | query-api | API truy vấn \+ Swagger |
@@ -1612,7 +1611,7 @@ volumes:
 
 ## **7.2 Kịch bản sinh dữ liệu giả (Mock Script)**
 
-Phục vụ demo và test không phụ thuộc thiết bị mạng thật. Ba script được cung cấp:
+Phục vụ demo và test không phụ thuộc thiết bị mạng thật. Hai script được cung cấp:
 
 ### **7.2.1 Sinh NetFlow v5 packet (Python)**
 
@@ -1647,11 +1646,7 @@ if \_\_name\_\_ \== "\_\_main\_\_":
         sock.sendto(build\_v5(30), COLLECTOR)  
         time.sleep(30 / rate)
 
-### **7.2.2 Sinh sFlow v5 packet giả (Python)**
-
-Script tạo sFlow v5 datagram với header chứa agent address/sequence number và Flow Sample chứa `samplingRate`, `samplePool` cùng sampled packet header; sau đó gửi tới `127.0.0.1:6343/udp`. Script cho phép cấu hình `--rate`, `--duration` và `--sampling-rate` để test parser, sequence-gap metric và normalization metadata.
-
-### **7.2.3 Sinh Zeek conn.log giả (NDJSON)**
+### **7.2.2 Sinh Zeek conn.log giả (NDJSON)**
 
 \#\!/usr/bin/env python3  
 """Ghi dòng JSON kiểu Zeek conn.log để collector tail."""  
@@ -1675,19 +1670,19 @@ with log.open("a") as f:
         f.flush()  
         time.sleep(0.0002)  \# \~5000 dòng/giây
 
-### **7.2.4 Kịch bản demo end-to-end**
+### **7.2.3 Kịch bản demo end-to-end**
 
 | Bước | Hành động | Kết quả mong đợi |
 | ----- | ----- | ----- |
 | 1 | docker compose up \-d | Mọi service healthy |
-| 2 | Chạy script NetFlow \+ sFlow \+ Zeek | nfc\_ingest\_rate\_eps \~ 5.000 trên Grafana |
+| 2 | Chạy script NetFlow \+ Zeek | nfc\_ingest\_rate\_eps \~ 5.000 trên Grafana |
 | 3 | Mở http://localhost:8080/swagger-ui | Thử các API truy vấn |
 | 4 | GET /flows?dst\_port=443\&start\_time=...\&end\_time=...\&limit=50 | Trả dữ liệu và `next_cursor`, `took_ms` p95 \< 2000 |
 | 5 | Gọi trang tiếp theo bằng `cursor` | Không lặp hoặc bỏ sót `flow_id` giữa các trang |
 | 6 | GET /flows/aggregations/top-talkers với time range | Trả top IP chính xác theo bytes, `consistency=exact` |
 | 7 | Tắt normalization sau khi ClickHouse ghi nhưng trước commit, rồi bật lại | Record có thể được replay nhưng `/flows` và aggregation chỉ tính một lần |
 
-**Assumption:** Mock script trên là minh họa cấu trúc; bản hoàn chỉnh đóng gói trong thư mục tools/mock/của repo, kèm tham số \--rate, \--duration, \--target. NetFlow v9/IPFIX mock cần gửi Template FlowSet trước Data FlowSet để collector giải mã được.
+**Assumption:** Mock script trên là minh họa cấu trúc; bản hoàn chỉnh đóng gói trong thư mục tools/mock/của repo, kèm tham số \--rate, \--duration, \--target. NetFlow v9 mock cần gửi Template FlowSet trước Data FlowSet để collector giải mã được.
 
 ---
 
@@ -1698,7 +1693,7 @@ with log.open("a") as f:
 | \# | Tài liệu | Nguồn |
 | ----- | ----- | ----- |
 | 1 | RFC 3954 — Cisco Systems NetFlow Services Export Version 9 | IETF |
-| 2 | RFC 7011 — Specification of the IPFIX Protocol | IETF |
+
 | 3 | RFC 5424 — The Syslog Protocol | IETF |
 | 4 | Cisco NetFlow v5 Record Format | Cisco Documentation |
 | 5 | ArcSight Common Event Format (CEF) Implementation Standard | Micro Focus |
