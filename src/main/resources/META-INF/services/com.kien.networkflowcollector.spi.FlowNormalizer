@@ -1,5 +1,5 @@
-com.kien.networkflowcollector.collectors.netflow.v5.NetFlowV5Normalizer
-com.kien.networkflowcollector.collectors.netflow.v9.NetFlowV9Normalizer
-com.kien.networkflowcollector.collectors.netflow.ipfix.IpfixNormalizer
-com.kien.networkflowcollector.collectors.zeek.ZeekConnNormalizer
-com.kien.networkflowcollector.collectors.suricata.SuricataFlowNormalizer
+com.kien.networkflowcollector.plugins.netflow.v5.NetFlowV5Normalizer
+com.kien.networkflowcollector.plugins.netflow.v9.NetFlowV9Normalizer
+com.kien.networkflowcollector.plugins.netflow.ipfix.IpfixNormalizer
+com.kien.networkflowcollector.plugins.zeek.ZeekConnNormalizer
+com.kien.networkflowcollector.plugins.suricata.SuricataFlowNormalizer
