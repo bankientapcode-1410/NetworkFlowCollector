@@ -11,8 +11,7 @@ Sinh viên sẽ tìm hiểu các định dạng flow phổ biến (NetFlow v5/v9
 
 | Collector                | Cơ Chế                                         | Ghi Chú  |
 |--------------------------|------------------------------------------------|----------|
-| NetFlow v5/v9 (+ IPFIX)  | UDP listener, parse binary/template packet     | Bắt buộc |
-| sFlow                    | UDP listener, parse flow/counter sample        | Bắt buộc |
+| NetFlow v5/v9            | UDP listener, parse binary packet theo RFC     | Bắt buộc |
 | Zeek/Suricata JSON log   | Đọc file log hoặc nhận qua TCP/Unix socket     | Bắt buộc |
 | Syslog (CEF/LEEF format) | UDP/TCP listener, parse header + extension     | Tùy chọn |
 | REST ingest API          | POST JSON trực tiếp, dùng cho test/integration | Bắt buộc |
@@ -26,7 +25,7 @@ Sinh viên sẽ tìm hiểu các định dạng flow phổ biến (NetFlow v5/v9
 | 3 | Storage layer | Lưu vào DB phù hợp với partition theo thời gian, index tối ưu cho query src/dst IP |
 | 4 | REST API truy vấn | Filter theo các trường đã có; aggregation (top talkers, top ports); phân trang |
 | 5 | Unit test + tài liệu API | Coverage ≥ 80%, Swagger/OpenAPI |
-| 6 | Demo | Docker Compose toàn bộ hệ thống, script sinh NetFlow/sFlow packet và Zeek log giả để demo |
+| 6 | Demo | Docker Compose toàn bộ hệ thống, script sinh NetFlow packet và Zeek log giả để demo |
 
 ### Yêu Cầu Phi Chức Năng
 

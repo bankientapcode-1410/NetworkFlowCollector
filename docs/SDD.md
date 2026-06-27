@@ -23,7 +23,7 @@ Phạm vi bao gồm:
 
 | Trong phạm vi (In-scope)                                                                      | Ngoài phạm vi (Out-of-scope)                                   |
 |-----------------------------------------------------------------------------------------------|----------------------------------------------------------------|
-| Thu thập flow từ NetFlow v5/v9, IPFIX, sFlow, Zeek/Suricata JSON, Syslog (CEF/LEEF), REST API | Triển khai agent/probe trên thiết bị mạng (router, switch)     |
+| Thu thập flow từ NetFlow v5/v9, Zeek/Suricata JSON, Syslog (CEF/LEEF), REST API               | Triển khai agent/probe trên thiết bị mạng (router, switch)     |
 | Chuẩn hóa dữ liệu về một schema thống nhất (Normalized Flow Record)                           | Phân tích bảo mật chuyên sâu (threat detection, IDS/IPS logic) |
 | Lưu trữ dữ liệu có phân vùng theo thời gian, tối ưu cho truy vấn IP                           | Giao diện người dùng (frontend dashboard)                      |
 | REST API truy vấn: filter, aggregation (top talkers/ports), phân trang                        | Cơ chế alerting/notification thời gian thực                    |
@@ -32,7 +32,7 @@ Phạm vi bao gồm:
 
 **Assumption:** Hệ thống được định vị là một **dịch vụ nền tảng (platform service)**, không phải sản phẩm SIEM hoàn chỉnh. Các tầng phân tích nâng cao (ML, anomaly detection) là khách hàng tiêu thụ (downstream consumer) của API mà hệ thống này cung cấp.
 
-**Trade-off độ tin cậy được chấp nhận:** Yêu cầu lưu offset/position để khởi động lại không mất dữ liệu chỉ có thể bảo đảm với nguồn có khả năng replay hoặc backpressure như Kafka, file tail, TCP và REST. NetFlow, sFlow và Syslog chạy qua UDP không có ACK/offset nên đầu vào trước khi Kafka xác nhận là **best-effort**; datagram có thể mất khi tiến trình dừng, socket/queue đầy hoặc mạng làm rơi gói. Hệ thống giảm thiểu và phát hiện mất dữ liệu bằng bounded queue, sequence number và metric drop, nhưng không tuyên bố at-least-once cho đoạn UDP → collector.
+**Trade-off độ tin cậy được chấp nhận:** Yêu cầu lưu offset/position để khởi động lại không mất dữ liệu chỉ có thể bảo đảm với nguồn có khả năng replay hoặc backpressure như Kafka, file tail, TCP và REST. NetFlow và Syslog chạy qua UDP không có ACK/offset nên đầu vào trước khi Kafka xác nhận là **best-effort**; datagram có thể mất khi tiến trình dừng, socket/queue đầy hoặc mạng làm rơi gói. Hệ thống giảm thiểu và phát hiện mất dữ liệu bằng bounded queue, sequence number và metric drop, nhưng không tuyên bố at-least-once cho đoạn UDP → collector.
 
 ## **1.2 Mục đích (Purpose)**
 
@@ -62,7 +62,7 @@ Thiết kế tuân thủ các chuẩn và quy ước sau:
 | Chuẩn / Quy ước                  | Áp dụng cho                              |
 |----------------------------------|------------------------------------------|
 | **RFC 3954**                     | Cấu trúc gói NetFlow v9 (template-based) |
-| **RFC 7011 (IPFIX)**             | Cấu trúc IPFIX, kế thừa từ NetFlow v9    |
+
 | **Cisco NetFlow v5 spec**        | Cấu trúc gói nhị phân v5 cố định         |
 | **RFC 5424**                     | Định dạng Syslog message                 |
 | **ArcSight CEF & IBM LEEF spec** | Parse header và extension key-value      |
@@ -98,8 +98,6 @@ Thiết kế tuân thủ các chuẩn và quy ước sau:
 |----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **NetFlow v5** | Giao thức xuất flow của Cisco với **cấu trúc nhị phân cố định**: header 24 byte \+ các record 48 byte. Không hỗ trợ template, dễ parse nhưng kém linh hoạt.                 |
 | **NetFlow v9** | Phiên bản template-based (RFC 3954). Gói gồm **Template FlowSet** (định nghĩa cấu trúc) và **Data FlowSet** (dữ liệu thực). Bộ thu phải **cache template** để giải mã data. |
-| **IPFIX**      | IP Flow Information Export (RFC 7011\) — chuẩn IETF mở rộng từ NetFlow v9, hỗ trợ Enterprise-specific fields và Variable-Length encoding.                                   |
-| **sFlow**      | Cơ chế lấy mẫu (sampling) gói tin, khác bản chất với NetFlow (NetFlow là aggregation theo flow).                                                                            |
 | **Zeek (Bro)** | Network security monitor sinh log dạng văn bản/JSON; conn.log chứa thông tin flow.                                                                                          |
 | **Suricata**   | IDS/IPS sinh eve.json — log JSON theo dòng (NDJSON), bao gồm sự kiện flow và netflow.                                                                                       |
 | **Syslog**     | Giao thức truyền log (RFC 5424\) qua UDP/TCP, port 514\.                                                                                                                    |
@@ -115,7 +113,7 @@ Thiết kế tuân thủ các chuẩn và quy ước sau:
 | **Producer-Consumer**    | Mẫu kiến trúc tách rời bên sinh dữ liệu (producer) và bên xử lý (consumer) qua một hàng đợi trung gian.                                                           |
 | **Message Bus / Broker** | Hệ thống trung gian lưu trữ và truyền message (ở đây là Apache Kafka).                                                                                            |
 | **Backpressure**         | Cơ chế kiểm soát luồng khi consumer xử lý chậm hơn producer.                                                                                                      |
-| **Plugin Architecture**  | Kiến trúc cho phép nạp thêm collector qua interface chung mà không sửa lõi.                                                                              |
+| **Plugin Architecture**  | Kiến trúc cho phép nạp thêm collector qua interface chung mà không sửa lõi.                                                                                       |
 | **SPI**                  | Service Provider Interface — cơ chế của Java (ServiceLoader) để khám phá implementation lúc runtime.                                                              |
 | **Columnar Storage**     | Lưu trữ theo cột, tối ưu cho truy vấn phân tích (OLAP) và nén dữ liệu.                                                                                            |
 | **Materialized View**    | Khung nhìn được tính toán sẵn và lưu vật lý. Incremental view tăng tốc aggregation nhưng không tự sửa phần đã cộng từ bản ghi replay khi bảng nguồn dedup về sau. |
@@ -156,7 +154,6 @@ classDef database fill:#1E1E1E,stroke:#FFF,stroke-width:1px,color:#FFF;
     subgraph Ingestion_Layer [Ingestion Layer]
         direction TB
         NC[Netflow Collector]
-        SC[sFlow Collector]
         SyC[Syslog Collector<br>optional]
         ZSC[Zeek/Suricata Collector]
         RIA[REST Ingest API]
@@ -187,15 +184,13 @@ classDef database fill:#1E1E1E,stroke:#FFF,stroke-width:1px,color:#FFF;
     %% --- Connections (Luồng Dữ Liệu) ---
 
     %% Từ nguồn tới Ingestion Layer
-    ND -->|"Netflow v5/v9/IPFIX<br>UDP/2055"| NC
-    ND -->|"sFlow v5<br>UDP/6343"| SC
+    ND -->|"Netflow v5/v9<br>UDP/2055"| NC
     ND -->|"CEF/LEEF<br>UDP/TCP 514"| SyC
     NS -->|"Zeek/Suricata JSON logs"| ZSC
     IC -->|"POST /ingest"| RIA
 
     %% Từ Ingestion Layer tới Kafka (Raw)
     NC --> KR
-    SC --> KR
     SyC --> KR
     ZSC --> KR
     RIA --> KR
@@ -280,10 +275,10 @@ Theo yêu cầu phi chức năng: *"Kiến trúc plugin-based cho collector — 
 Mọi collector đều hiện thực một interface chung. Lõi hệ thống chỉ phụ thuộc vào interface này, không phụ thuộc vào implementation cụ thể (nguyên tắc **Dependency Inversion**).
 
 public interface FlowCollector {  
-    /\*\* Định danh duy nhất của plugin, vd: "netflow", "sflow", "zeek-json". \*/  
+    /\*\* Định danh duy nhất của plugin, vd: "netflow", "zeek-json". \*/  
     String type();
 
-    /\*\* Các sourceType mà plugin có thể phát ra, vd: netflow-v5/netflow-v9/ipfix. \*/  
+    /\*\* Các sourceType mà plugin có thể phát ra, vd: netflow-v5/netflow-v9. \*/  
     Set\<String\> supportedSourceTypes();
 
     /\*\* Khởi tạo từ cấu hình (port, đường dẫn file, ...). \*/  
@@ -313,7 +308,7 @@ public record CollectorHealth(
     Instant lastRecordAt
 ) {}
 
-`type()` định danh **plugin/instance cấu hình**, còn `RawFlowRecord.sourceType` định danh **định dạng bản ghi**. Ví dụ một plugin có `type() = "netflow"` có thể công bố ba source type: `netflow-v5`, `netflow-v9`, `ipfix`. Mỗi giá trị `sourceType` phải có đúng một `FlowNormalizer` tương ứng.
+`type()` định danh **plugin/instance cấu hình**, còn `RawFlowRecord.sourceType` định danh **định dạng bản ghi**. Ví dụ một plugin có `type() = "netflow"` có thể công bố hai source type: `netflow-v5`, `netflow-v9`. Mỗi giá trị `sourceType` phải có đúng một `FlowNormalizer` tương ứng.
 
 #### **Quy ước tên giữa các lớp**
 
@@ -370,12 +365,12 @@ discovered -> init -> STARTING -> start -> UP/DEGRADED -> stop -> STOPPED
 
 Để tránh tăng bộ nhớ vô hạn, cả hàng đợi parse và số publish đang chờ xác nhận đều có giới hạn cấu hình:
 
-| Loại nguồn                     | Khi hàng đợi đầy                     | Hành vi bắt buộc                                                                                                            |
-|--------------------------------|--------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
-| UDP (NetFlow/sFlow/Syslog UDP) | Không thể yêu cầu nguồn gửi chậm lại | Drop datagram mới, tăng `nfc_ingest_dropped_total{source_type,reason="queue_full"}` và chuyển `DEGRADED` trong khi còn drop |
-| File tail                      | Có thể tạm dừng                      | Tạm ngừng đọc; chỉ cập nhật checkpoint sau khi publish thành công                                                           |
-| TCP/Unix socket                | Có backpressure transport            | Tạm ngừng read/giảm demand cho đến khi queue có chỗ                                                                         |
-| REST ingest                    | Có thể phản hồi client               | Trả `429 Too Many Requests` (quá tải có kiểm soát) hoặc `503 Service Unavailable` (publisher/Kafka không sẵn sàng)          |
+| Loại nguồn               | Khi hàng đợi đầy                     | Hành vi bắt buộc                                                                                                            |
+|--------------------------|--------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| UDP (NetFlow/Syslog UDP) | Không thể yêu cầu nguồn gửi chậm lại | Drop datagram mới, tăng `nfc_ingest_dropped_total{source_type,reason="queue_full"}` và chuyển `DEGRADED` trong khi còn drop |
+| File tail                | Có thể tạm dừng                      | Tạm ngừng đọc; chỉ cập nhật checkpoint sau khi publish thành công                                                           |
+| TCP/Unix socket          | Có backpressure transport            | Tạm ngừng read/giảm demand cho đến khi queue có chỗ                                                                         |
+| REST ingest              | Có thể phản hồi client               | Trả `429 Too Many Requests` (quá tải có kiểm soát) hoặc `503 Service Unavailable` (publisher/Kafka không sẵn sàng)          |
 
 Mọi parser phải fail-safe theo mục 3.4.4: lỗi một gói/dòng chỉ tăng metric và xử lý bản ghi lỗi theo chính sách nguồn, không được làm chết worker loop. Lỗi vòng đời (`init/start/stop`) được registry cách ly bằng `try/catch`; tuy nhiên vì các plugin vẫn chạy chung JVM, thiết kế này không cách ly tuyệt đối lỗi cạn bộ nhớ, CPU hoặc lỗi tiến trình.
 
@@ -447,23 +442,19 @@ classDiagram
     }
 
     class NetFlowCollector
-    class SFlowCollector
     class ZeekJsonCollector
     class SyslogCollector
     class RestIngestCollector
     class NewC["NewFormatCollector<br>(plugin tương lai)"]
     class NetFlowV5Normalizer
-    class SFlowNormalizer
     class ZeekJsonNormalizer
 
     FlowCollector <|.. NetFlowCollector
-    FlowCollector <|.. SFlowCollector
     FlowCollector <|.. ZeekJsonCollector
     FlowCollector <|.. SyslogCollector
     FlowCollector <|.. RestIngestCollector
     FlowCollector <|.. NewC
     FlowNormalizer <|.. NetFlowV5Normalizer
-    FlowNormalizer <|.. SFlowNormalizer
     FlowNormalizer <|.. ZeekJsonNormalizer
 
     FlowCollector --> FlowPublisher : publish qua
@@ -472,7 +463,7 @@ classDiagram
     NormalizerRegistry --> FlowNormalizer : nạp & định tuyến
     
     note for NewC "Thêm collector mới =<br>thêm JAR + 2 đăng ký SPI<br>Không sửa lõi."
-    note for FlowNormalizer "9 source types:<br>netflow-v5, netflow-v9, ipfix,<br>sflow-v5, zeek-json, suricata-json,<br>syslog-cef, syslog-leef, rest<br>Mỗi type có đúng 1 normalizer."
+    note for FlowNormalizer "7 source types:<br>netflow-v5, netflow-v9,<br>zeek-json, suricata-json,<br>syslog-cef, syslog-leef, rest<br>Mỗi type có đúng 1 normalizer."
 ```
 
 ### **3.3.3 Tại sao chọn SPI thay vì cấu hình tĩnh?**
@@ -530,8 +521,7 @@ So sánh các lựa chọn cho khối lượng dữ liệu phân tích lớn, gh
 | Định dạng              | Cơ chế parse                                                                                                      | Lý do                                                                                           |
 |------------------------|-------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|
 | **NetFlow v5**         | Đọc offset nhị phân cố định trên `ByteBuf` (header 24 B \+ mỗi record 48 B)                                       | Cấu trúc tĩnh; parse trực tiếp có chi phí thấp và không cần tạo object trung gian               |
-| **NetFlow v9 / IPFIX** | Parser template-based \+ **TemplateCache** theo `(protocol, exporter, observationDomain/sourceId, templateId)`    | Data Set chỉ giải mã được khi collector đã nhận đúng template của Exporting Process             |
-| **sFlow v5**           | Parse datagram theo sample format; trong mỗi sample tiếp tục parse các flow/counter record theo enterprise/format | sFlow là dữ liệu lấy mẫu và có thể mở rộng kiểu record; phải giữ metadata sampling              |
+| **NetFlow v9**         | Parser template-based \+ **TemplateCache** theo `(exporter, sourceId, templateId)`                                | Data Set chỉ giải mã được khi collector đã nhận đúng template của Exporting Process             |
 | **Zeek/Suricata JSON** | Jackson **streaming** theo từng dòng NDJSON, sau đó chuyển qua adapter schema riêng cho Zeek và Suricata          | Không nạp toàn file vào RAM và không trộn hai schema nguồn khác nhau                            |
 | **Syslog CEF/LEEF**    | Tách Syslog envelope, header và extension bằng state machine theo delimiter/escape; không dùng một regex bao trùm | CEF/LEEF có cấu trúc rõ nhưng delimiter có thể được escape và giá trị extension có khoảng trắng |
 | **REST ingest**        | Jackson data binding qua Spring `@RequestBody` \+ Bean Validation                                                 | Payload có schema do API kiểm soát; ưu tiên thông báo lỗi trường cụ thể cho client              |
@@ -558,7 +548,6 @@ interface "Ingest REST API" as IngestApi
 package "Ingestion Layer" {
     component "CollectorRegistry" as CollectorRegistry <<registry>>
     component "NetFlow Collector" as NetFlowCollector <<plugin>>
-    component "sFlow Collector" as SFlowCollector <<plugin>>
     component "Zeek/Suricata Collector" as ZeekCollector <<plugin>>
     component "Syslog Collector" as SyslogCollector <<plugin>>
     component "REST Ingest Collector" as RestIngestCollector <<plugin>>
@@ -592,7 +581,6 @@ component "Kafka\n(dead-letter-flows)" as KafkaDlq <<broker-topic>>
 database "ClickHouse" as ClickHouse
 
 NetFlowCollector ..|> FlowCollector
-SFlowCollector ..|> FlowCollector
 ZeekCollector ..|> FlowCollector
 SyslogCollector ..|> FlowCollector
 RestIngestCollector ..|> FlowCollector
@@ -632,36 +620,27 @@ Tầng ingestion là tập hợp các collector, mỗi collector là một plugi
 
 | Collector               | Cơ chế                                            | Cổng / Nguồn mặc định    |
 |-------------------------|---------------------------------------------------|--------------------------|
-| NetFlow v5/v9 (+ IPFIX) | Netty UDP listener, parse binary theo RFC         | UDP/2055                 | 
-| sFlow v5                | Netty UDP listener, parse flow/counter sample     | UDP/6343                 |
+| NetFlow v5/v9           | Netty UDP listener, parse binary theo RFC         | UDP/2055                 | 
 | Zeek/Suricata JSON      | Đọc file (tail) hoặc nhận qua TCP/Unix socket     | conn.log, eve.json / TCP |
 | Syslog (CEF/LEEF)       | Netty UDP/TCP listener, parse header \+ extension | UDP+TCP/514              |
 | REST ingest API         | POST JSON, Bean Validation                        | HTTP/8081 /ingest        |
 
-### **4.1.1 Thiết kế collector NetFlow (v5/v9/IPFIX)**
+### **4.1.1 Thiết kế collector NetFlow (v5/v9)**
 
-* **Netty pipeline:** DatagramPacket → VersionDetector → (V5Decoder | V9Decoder | IpfixDecoder) → RawFlowMapper.  
+* **Netty pipeline:** DatagramPacket → VersionDetector → (V5Decoder | V9Decoder) → RawFlowMapper.  
 * **VersionDetector** đọc 2 byte đầu (version) để định tuyến tới decoder phù hợp.  
 * **NetFlow v5:** trước khi đọc record, kiểm tra `version=5`, `count`, độ dài tối thiểu `24 + count × 48`, byte order network-order và số byte còn đọc được. Các trường unsigned phải được nâng sang kiểu Java đủ lớn. `first`/`last` là thời gian tương đối theo `sysUptime`; parser kết hợp với thời gian export trong header để tạo timestamp tuyệt đối và xử lý trường hợp bộ đếm uptime quay vòng. Datagram thiếu byte hoặc có `count` không hợp lệ bị loại toàn gói.
-* **TemplateCache** (cho v9/IPFIX) lưu template theo khóa `(protocol, exporter transport identity, observationDomain/sourceId, templateId)`. `exporter transport identity` gồm ít nhất source IP và source port/session khi có; NetFlow v9 dùng `sourceId`, còn IPFIX dùng `observationDomainId` và hai giá trị này không dùng chung namespace. Cache có TTL/kích thước tối đa, làm mới khi nhận template mới và xử lý template hết hạn, IPFIX Template Withdrawal hoặc exporter restart. Parser hỗ trợ Options Template; riêng IPFIX xử lý enterprise-specific Information Element và variable-length field. Data đến trước template chỉ được đệm trong queue có giới hạn; khi hết thời gian hoặc dung lượng đệm thì bị drop và tăng `nfc_template_missing_total`.  
+* **TemplateCache** (cho v9) lưu template theo khóa `(exporter transport identity, sourceId, templateId)`. `exporter transport identity` gồm ít nhất source IP và source port/session khi có. Cache có TTL/kích thước tối đa, làm mới khi nhận template mới và xử lý template hết hạn hoặc exporter restart. Parser hỗ trợ Options Template. Data đến trước template chỉ được đệm trong queue có giới hạn; khi hết thời gian hoặc dung lượng đệm thì bị drop và tăng `nfc_template_missing_total`.  
 * Mỗi flow record trong gói được map thành một RawFlowRecord (giữ nguyên field gốc \+ metadata exporterIp, receivedAt, sourceType).
 
-### **4.1.2 Thiết kế collector sFlow**
-
-* Nhận sFlow v5 datagram từ sFlow agent trên switch/router qua **UDP/6343**.
-* Parse datagram header gồm agent address, sub-agent ID, sequence number, uptime và số sample; sau đó parse `samplingRate`, `samplePool`, drops cùng các Flow Sample/Counter Sample trong từng sample tương ứng.
-* Parser nhận biết standard/expanded sample, enterprise/format ID và địa chỉ agent IPv4/IPv6. Record chưa hỗ trợ được bỏ qua an toàn dựa trên độ dài khai báo thay vì làm lỗi toàn datagram.
-* Flow Sample được map thành RawFlowRecord với `sourceType=sflow-v5`; Counter Sample được chuyển sang metric/telemetry riêng, không ép thành network flow.
-* Normalizer phải giữ metadata `sampled`, `samplingRate` và `samplePool`; collector không nhân byte/packet của sample thành lưu lượng ước lượng và normalizer không coi các giá trị này là tổng traffic thực tế.
-
-### **4.1.3 Thiết kế collector Zeek/Suricata**
+### **4.1.2 Thiết kế collector Zeek/Suricata**
 
 * Chế độ **file tail**: theo dõi file log bằng inotify/poll, lưu định danh file và byte offset vào checkpoint store. Checkpoint chỉ được cập nhật sau khi bản ghi tương ứng đã được Kafka xác nhận. Khi khởi động lại, collector tiếp tục từ checkpoint gần nhất để không bỏ sót dữ liệu; một số bản ghi có thể được đọc lại nếu tiến trình dừng sau Kafka ACK nhưng trước khi checkpoint được lưu, phù hợp với ngữ nghĩa at-least-once. Collector cũng phải xử lý file rotation và truncate.  
 * Chế độ **TCP/Unix socket**: nhận stream NDJSON.  
 * Giới hạn kích thước mỗi dòng và độ sâu JSON bằng cấu hình; dòng chưa có newline được giữ lại đến khi hoàn chỉnh.
 * Parse NDJSON theo từng dòng bằng Jackson streaming và định tuyến qua adapter riêng: `ZeekJsonAdapter` xử lý bản ghi `conn` (`id.orig_h`, `id.resp_h`, ...), còn `SuricataJsonAdapter` chỉ nhận `event_type=flow/netflow` (`src_ip`, `dest_ip`, `flow.*`, `netflow.*`). Mỗi adapter tạo `RawFlowRecord` với `sourceType` tương ứng (`zeek-json` hoặc `suricata-json`) và giữ nguyên field nguồn; việc ánh xạ sang schema thống nhất được thực hiện tại Normalization Service.
 
-### **4.1.4 Thiết kế collector Syslog CEF/LEEF**
+### **4.1.3 Thiết kế collector Syslog CEF/LEEF**
 
 * Nhận Syslog qua UDP hoặc TCP trên cổng cấu hình, mặc định `514`.
 * Với UDP, mỗi datagram được xử lý như một message độc lập. Với TCP, collector hỗ trợ framing theo newline hoặc octet-counting.
@@ -669,7 +648,7 @@ Tầng ingestion là tập hợp các collector, mỗi collector là một plugi
 * Bản ghi hợp lệ được map thành `RawFlowRecord` với `sourceType=syslog-cef` hoặc `syslog-leef`; các extension chưa nhận biết vẫn được giữ trong `fields`. Field trùng được xử lý theo một chính sách xác định và có metric cảnh báo.
 * Áp dụng giới hạn cho độ dài message, số extension và độ dài value. Message quá dài, sai định dạng hoặc vượt giới hạn bị loại và tăng `nfc_parse_error_total`.
 
-### **4.1.5 Thiết kế REST Ingest API**
+### **4.1.4 Thiết kế REST Ingest API**
 
 POST /ingest  
 Content-Type: application/json
@@ -678,7 +657,7 @@ Chấp nhận một bản ghi hoặc mảng bản ghi trong giới hạn cấu h
 
 **Lý do thiết kế:** Collector chịu trách nhiệm tiếp nhận dữ liệu, parse và kiểm tra đầu vào ở mức transport/schema tối thiểu trước khi publish `RawFlowRecord`. Ví dụ, REST API kiểm tra Content-Type, cú pháp JSON, kiểu dữ liệu và giới hạn batch. Normalization Service chịu trách nhiệm ánh xạ về schema chung, kiểm tra các ràng buộc nghiệp vụ sau chuẩn hóa và masking dữ liệu. Cách phân chia này giữ collector mỏng nhưng vẫn cho phép từ chối sớm request không hợp lệ.
 
-### **4.1.6 Quy tắc xử lý lỗi chung**
+### **4.1.5 Quy tắc xử lý lỗi chung**
 
 * Lỗi được cách ly tại biên nhỏ nhất có thể: datagram đối với binary/UDP, dòng đối với NDJSON/Syslog stream và toàn request/batch đối với REST. `RuntimeException` do dữ liệu xấu không được thoát khỏi worker loop; không bắt chung `Throwable` vì `OutOfMemoryError` và lỗi JVM không phải lỗi parse có thể phục hồi.
 * Mọi lỗi parse tăng `nfc_parse_error_total{source_type,reason}`. `reason` lấy từ enum hữu hạn như `truncated`, `invalid_header`, `template_missing`, `invalid_json` hoặc `unsupported_record`; không dùng exception message làm label. Log lỗi có rate limit và chỉ chứa metadata/payload đã giới hạn.
@@ -1132,7 +1111,7 @@ sequenceDiagram
         activate K
         K-->>N: RawFlowRecord[] + partition/offset
         deactivate K
-        N->>N: normalize + validate + mask;<br/>tách valid/invalid theo từng offset
+        N->>N: normalize + validate + mask<br/>tách valid/invalid theo từng offset
         opt có bản ghi hợp lệ
             N->>CH: batchInsert(valid[])
             activate CH
@@ -1735,7 +1714,7 @@ with log.open("a") as f:
 
 ## **8.2 Mã nguồn**
 
-### **8.2.1 Cấu trúc repository (đề xuất)**
+### **8.2.1 Cấu trúc repository**
 
 network-flow-collector/  
 ├── src/  
@@ -1744,8 +1723,7 @@ network-flow-collector/
 │   │   │   ├── common/         \# NormalizedFlow, config, metrics, logging  
 │   │   │   ├── spi/            \# FlowCollector, FlowNormalizer, FlowPublisher, health và RawFlowRecord  
 │   │   │   ├── plugins/  
-│   │   │   │   ├── netflow/    \# v5/v9/IPFIX (Netty)  
-│   │   │   │   ├── sflow/      \# sFlow v5 (Netty UDP/6343)  
+│   │   │   │   ├── netflow/    \# v5/v9 (Netty)   
 │   │   │   │   ├── zeek/       \# Zeek/Suricata JSON  
 │   │   │   │   ├── syslog/     \# CEF/LEEF  
 │   │   │   │   └── rest/       \# REST ingest  
@@ -1769,16 +1747,16 @@ network-flow-collector/
 
 ### **8.2.2 Gói mã nguồn và công nghệ chính**
 
-| Gói / thành phần | Công nghệ |
-| ----- | ----- |
-| plugins | Java 21, Netty, Kafka Producer, Jackson |
-| normalization | Java 21, Spring Boot 3.x, Kafka Consumer, ClickHouse JDBC |
-| query | Java 21, Spring Boot 3.x, springdoc-openapi |
-| storage | ClickHouse 24.x |
-| message bus | Apache Kafka 3.7 (KRaft) |
-| observability | Micrometer, Prometheus, Grafana, Logback JSON |
-| testing | JUnit 5, Mockito, AssertJ, Testcontainers, JaCoCo |
-| quality | Spotless, Checkstyle, SpotBugs, gitleaks |
+| Gói / thành phần | Công nghệ                                                 |
+|------------------|-----------------------------------------------------------|
+| plugins          | Java 21, Netty, Kafka Producer, Jackson                   |
+| normalization    | Java 21, Spring Boot 3.x, Kafka Consumer, ClickHouse JDBC |
+| query            | Java 21, Spring Boot 3.x, springdoc-openapi               |
+| storage          | ClickHouse 24.x                                           |
+| message bus      | Apache Kafka 3.7 (KRaft)                                  |
+| observability    | Micrometer, Prometheus, Grafana, Logback JSON             |
+| testing          | JUnit 5, Mockito, AssertJ, Testcontainers, JaCoCo         |
+| quality          | Spotless, Checkstyle, SpotBugs, gitleaks                  |
 
 ### **8.2.3 Trích đoạn interface lõi (tham chiếu)**
 
