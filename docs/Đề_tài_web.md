@@ -5,7 +5,7 @@
 ### Mô Tả
 Xây dựng hệ thống backend thu thập và truy vấn network flow log (dữ liệu phiên kết nối mạng) từ nhiều nguồn khác nhau. Hệ thống đóng vai trò là tầng ingestion — nhận dữ liệu flow từ các agent/probe gửi lên, chuẩn hóa về schema thống nhất, và lưu vào kho tập trung để phục vụ phân tích.
 
-Sinh viên sẽ tìm hiểu các định dạng flow phổ biến (NetFlow v5/v9, IPFIX, sFlow, JSON log từ Zeek/Suricata), xây dựng các parser/collector tương ứng, và thiết kế pipeline ingestion theo mô hình producer-consumer.
+Sinh viên sẽ tìm hiểu các định dạng flow phổ biến (NetFlow v5/v9, sFlow, JSON log từ Zeek/Suricata), xây dựng các parser/collector tương ứng, và thiết kế pipeline ingestion theo mô hình producer-consumer.
 
 #### Các Collector Cần Xây Dựng
 

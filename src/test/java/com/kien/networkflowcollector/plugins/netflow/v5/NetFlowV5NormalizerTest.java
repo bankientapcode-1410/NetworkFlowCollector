@@ -5,86 +5,176 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.kien.networkflowcollector.common.NormalizedFlow;
 import com.kien.networkflowcollector.spi.RawFlowRecord;
-import io.netty.buffer.Unpooled;
 import java.time.Instant;
-import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+@DisplayName("NetFlowV5Normalizer")
 class NetFlowV5NormalizerTest {
 
-    private final NetFlowV5Normalizer normalizer = new NetFlowV5Normalizer();
+    private static final Instant TS_START = Instant.parse("2026-06-19T08:15:30Z");
+    private static final Instant TS_END   = Instant.parse("2026-06-19T08:15:35Z");
+    private static final long DURATION_MS = 5000L;
+    private static final Instant RECEIVED_AT = Instant.parse("2026-06-19T08:15:36Z");
+
+    private NetFlowV5Normalizer normalizer;
+
+    @BeforeEach
+    void setUp() {
+        normalizer = new NetFlowV5Normalizer();
+    }
+
+    private Map<String, Object> validFields() {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("ts_start", TS_START);
+        f.put("ts_end", TS_END);
+        f.put("duration_ms", DURATION_MS);
+        f.put("src_ip", "10.20.30.40");
+        f.put("dst_ip", "93.184.216.34");
+        f.put("src_port", 54321);
+        f.put("dst_port", 443);
+        f.put("protocol", "tcp");
+        f.put("protocol_number", 6);
+        f.put("bytes", 18432L);
+        f.put("packets", 24L);
+        f.put("tcp_flags", 0x1b);
+        f.put("sampling_mode", 0);
+        f.put("sampling_interval", 0);
+        f.put("flow_sequence", 42L);
+        f.put("record_index", 0);
+        return f;
+    }
+
+    private RawFlowRecord rawRecord(Map<String, Object> fields) {
+        return new RawFlowRecord("netflow-v5", "10.0.0.1", RECEIVED_AT, fields);
+    }
 
     @Test
-    void normalizeNetFlowV5Record() {
-        Instant receivedAt = Instant.parse("2026-06-24T12:00:00Z");
-        RawFlowRecord raw = firstRecord(receivedAt);
+    @DisplayName("sourceType returns 'netflow-v5'")
+    void sourceType_returnsNetflowV5() {
+        assertThat(normalizer.sourceType()).isEqualTo("netflow-v5");
+    }
+
+    @Test
+    @DisplayName("Valid record → all fields mapped to NormalizedFlow")
+    void normalize_validRecord_returnsNormalizedFlow() {
+        RawFlowRecord raw = rawRecord(validFields());
 
         NormalizedFlow flow = normalizer.normalize(raw);
 
-        assertThat(flow.tsStart()).isEqualTo(Instant.parse("2023-11-14T22:13:19.123Z"));
-        assertThat(flow.tsEnd()).isEqualTo(Instant.parse("2023-11-14T22:13:19.623Z"));
-        assertThat(flow.durationMs()).isEqualTo(500);
-        assertThat(flow.srcIp()).isEqualTo("10.0.0.1");
-        assertThat(flow.srcPort()).isEqualTo(54_321);
-        assertThat(flow.dstIp()).isEqualTo("192.0.2.10");
+        assertThat(flow.flowId()).isNotNull();
+        assertThat(flow.tsStart()).isEqualTo(TS_START);
+        assertThat(flow.tsEnd()).isEqualTo(TS_END);
+        assertThat(flow.durationMs()).isEqualTo(DURATION_MS);
+        assertThat(flow.srcIp()).isEqualTo("10.20.30.40");
+        assertThat(flow.dstIp()).isEqualTo("93.184.216.34");
+        assertThat(flow.srcPort()).isEqualTo(54321);
         assertThat(flow.dstPort()).isEqualTo(443);
         assertThat(flow.protocol()).isEqualTo("tcp");
-        assertThat(flow.bytesTotal()).isEqualTo(3_456);
-        assertThat(flow.packetsTotal()).isEqualTo(12);
-        assertThat(flow.tcpFlags()).isEqualTo(27);
-        assertThat(flow.sampled()).isTrue();
-        assertThat(flow.samplingRate()).isEqualTo(100);
-        assertThat(flow.samplePool()).isNull();
+        assertThat(flow.bytesTotal()).isEqualTo(18432L);
+        assertThat(flow.packetsTotal()).isEqualTo(24L);
         assertThat(flow.sourceType()).isEqualTo("netflow-v5");
-        assertThat(flow.exporterIp()).isEqualTo("198.51.100.7");
-        assertThat(flow.ingestTime()).isEqualTo(receivedAt);
-        assertThat(flow.srcCountryCode()).isNull();
-        assertThat(flow.dstCountryCode()).isNull();
+        assertThat(flow.exporterIp()).isEqualTo("10.0.0.1");
+        assertThat(flow.ingestTime()).isEqualTo(RECEIVED_AT);
     }
 
     @Test
-    void flowIdIsStableForSameRawRecord() {
-        RawFlowRecord raw = firstRecord(Instant.parse("2026-06-24T12:00:00Z"));
+    @DisplayName("TCP protocol → tcpFlags included")
+    void normalize_tcpProtocol_includesTcpFlags() {
+        Map<String, Object> f = validFields();
+        f.put("protocol_number", 6);
+        f.put("tcp_flags", 0x12);
 
-        assertThat(normalizer.normalize(raw).flowId()).isEqualTo(normalizer.normalize(raw).flowId());
+        NormalizedFlow flow = normalizer.normalize(rawRecord(f));
+
+        assertThat(flow.tcpFlags()).isEqualTo(0x12);
     }
 
     @Test
-    void nonTcpRecordDoesNotExposeTcpFlags() {
-        List<RawFlowRecord> records =
-                new NetFlowV5Decoder()
-                        .decode(
-                                Unpooled.wrappedBuffer(NetFlowV5DecoderTest.packet()),
-                                "198.51.100.7",
-                                Instant.parse("2026-06-24T12:00:00Z"));
+    @DisplayName("Non-TCP protocol → tcpFlags is null")
+    void normalize_nonTcpProtocol_nullTcpFlags() {
+        Map<String, Object> f = validFields();
+        f.put("protocol_number", 17);
+        f.put("protocol", "udp");
+        f.put("tcp_flags", 0);
 
-        NormalizedFlow flow = normalizer.normalize(records.get(1));
+        NormalizedFlow flow = normalizer.normalize(rawRecord(f));
 
-        assertThat(flow.protocol()).isEqualTo("udp");
         assertThat(flow.tcpFlags()).isNull();
     }
 
     @Test
-    void rejectsUnsupportedSourceType() {
-        RawFlowRecord raw =
-                new RawFlowRecord(
-                        "sflow",
-                        "198.51.100.7",
-                        Instant.parse("2026-06-24T12:00:00Z"),
-                        Map.of());
+    @DisplayName("Sampled flow → sampled=true, samplingRate set")
+    void normalize_sampled_setsRateAndFlag() {
+        Map<String, Object> f = validFields();
+        f.put("sampling_mode", 1);
+        f.put("sampling_interval", 100);
+
+        NormalizedFlow flow = normalizer.normalize(rawRecord(f));
+
+        assertThat(flow.sampled()).isTrue();
+        assertThat(flow.samplingRate()).isEqualTo(100L);
+    }
+
+    @Test
+    @DisplayName("Unsampled flow → sampled=false, samplingRate null")
+    void normalize_unsampled_nullRate() {
+        Map<String, Object> f = validFields();
+        f.put("sampling_mode", 0);
+        f.put("sampling_interval", 1);
+
+        NormalizedFlow flow = normalizer.normalize(rawRecord(f));
+
+        assertThat(flow.sampled()).isFalse();
+        assertThat(flow.samplingRate()).isNull();
+    }
+
+    @Test
+    @DisplayName("Same input → same flowId (deterministic UUID)")
+    void normalize_flowIdDeterministic() {
+        RawFlowRecord raw = rawRecord(validFields());
+
+        UUID id1 = normalizer.normalize(raw).flowId();
+        UUID id2 = normalizer.normalize(raw).flowId();
+
+        assertThat(id1).isEqualTo(id2);
+    }
+
+    @Test
+    @DisplayName("Different inputs → different flowIds")
+    void normalize_differentInputs_differentFlowIds() {
+        Map<String, Object> f1 = validFields();
+        Map<String, Object> f2 = validFields();
+        f2.put("src_port", 9999);
+
+        UUID id1 = normalizer.normalize(rawRecord(f1)).flowId();
+        UUID id2 = normalizer.normalize(rawRecord(f2)).flowId();
+
+        assertThat(id1).isNotEqualTo(id2);
+    }
+
+    @Test
+    @DisplayName("Wrong source type → IllegalArgumentException")
+    void normalize_wrongSourceType_throwsException() {
+        RawFlowRecord raw = new RawFlowRecord("netflow-v9", "10.0.0.1", RECEIVED_AT, validFields());
 
         assertThatThrownBy(() -> normalizer.normalize(raw))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unsupported source type");
     }
 
-    private static RawFlowRecord firstRecord(Instant receivedAt) {
-        return new NetFlowV5Decoder()
-                .decode(
-                        Unpooled.wrappedBuffer(NetFlowV5DecoderTest.packet()),
-                        "198.51.100.7",
-                        receivedAt)
-                .getFirst();
+    @Test
+    @DisplayName("Missing required field → IllegalArgumentException")
+    void normalize_missingRequiredField_throwsException() {
+        Map<String, Object> f = validFields();
+        f.remove("src_ip");
+
+        assertThatThrownBy(() -> normalizer.normalize(rawRecord(f)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("src_ip");
     }
 }

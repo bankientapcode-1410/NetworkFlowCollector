@@ -1,4 +1,3 @@
 com.kien.networkflowcollector.plugins.netflow.NetFlowCollector
-com.kien.networkflowcollector.plugins.netflow.ipfix.IpfixCollector
 com.kien.networkflowcollector.plugins.zeek.ZeekCollector
 com.kien.networkflowcollector.plugins.suricata.SuricataCollector

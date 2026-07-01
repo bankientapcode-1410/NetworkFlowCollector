@@ -4,167 +4,406 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.kien.networkflowcollector.spi.RawFlowRecord;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+@DisplayName("NetFlowV9Decoder")
 class NetFlowV9DecoderTest {
 
-    private final NetFlowV9Decoder decoder = new NetFlowV9Decoder();
+    private static final String EXPORTER_IP = "10.0.0.1";
+    private static final Instant RECEIVED_AT = Instant.parse("2026-06-19T10:00:00Z");
+    private static final long SYS_UPTIME = 100_000L;
+    private static final long UNIX_SECS = 1718784000L;
+    private static final long FLOW_SEQ = 1L;
+    private static final long SOURCE_ID = 100L;
+    private static final int V9_HEADER_LEN = 20;
+
+    private NetFlowV9Decoder decoder;
+
+    @BeforeEach
+    void setUp() {
+        decoder = new NetFlowV9Decoder();
+    }
+
+    // ── helpers ──────────────────────────────────────────────────
+
+    private static void writeV9Header(ByteBuf buf, int count, long sysUptime,
+                                      long unixSecs, long flowSeq, long sourceId) {
+        buf.writeShort(9);
+        buf.writeShort(count);
+        buf.writeInt((int) sysUptime);
+        buf.writeInt((int) unixSecs);
+        buf.writeInt((int) flowSeq);
+        buf.writeInt((int) sourceId);
+    }
+
+    /**
+     * Builds a template FlowSet with a single template (id=256) that defines:
+     * src_ip(8/4), dst_ip(12/4), src_port(7/2), dst_port(11/2), protocol(4/1),
+     * bytes(1/4), packets(2/4), tcp_flags(6/1), first_switched(22/4), last_switched(21/4).
+     * Total record length = 4+4+2+2+1+4+4+1+4+4 = 30 bytes.
+     */
+    private static void writeStdTemplateFlowSet(ByteBuf buf) {
+        int[][] fields = {
+            {8, 4}, {12, 4}, {7, 2}, {11, 2}, {4, 1},
+            {1, 4}, {2, 4}, {6, 1}, {22, 4}, {21, 4}
+        };
+        int fieldCount = fields.length;
+        int flowSetLen = 4 + 4 + fieldCount * 4;   // flowset hdr + tmpl hdr + fields
+        buf.writeShort(0);                          // flowSetId = 0 (template)
+        buf.writeShort(flowSetLen);
+        buf.writeShort(256);                        // templateId
+        buf.writeShort(fieldCount);
+        for (int[] f : fields) {
+            buf.writeShort(f[0]);
+            buf.writeShort(f[1]);
+        }
+    }
+
+    /**
+     * Writes a Data FlowSet referencing templateId=256 with one record (30 bytes).
+     */
+    private static void writeStdDataFlowSet(ByteBuf buf,
+                                            long srcIp, long dstIp,
+                                            int srcPort, int dstPort,
+                                            int proto, long bytes, long packets,
+                                            int tcpFlags,
+                                            long firstSwitched, long lastSwitched) {
+        int recordLen = 30;
+        int flowSetLen = 4 + recordLen;
+        buf.writeShort(256);                        // flowSetId = templateId
+        buf.writeShort(flowSetLen);
+        buf.writeInt((int) srcIp);                  // type 8 (4B)
+        buf.writeInt((int) dstIp);                  // type 12 (4B)
+        buf.writeShort(srcPort);                    // type 7 (2B)
+        buf.writeShort(dstPort);                    // type 11 (2B)
+        buf.writeByte(proto);                       // type 4 (1B)
+        buf.writeInt((int) bytes);                  // type 1 (4B)
+        buf.writeInt((int) packets);                // type 2 (4B)
+        buf.writeByte(tcpFlags);                    // type 6 (1B)
+        buf.writeInt((int) firstSwitched);          // type 22 (4B)
+        buf.writeInt((int) lastSwitched);           // type 21 (4B)
+    }
+
+    private static void writeDefaultDataFlowSet(ByteBuf buf) {
+        writeStdDataFlowSet(buf, 0x0A000001L, 0xC0A80101L,
+                54321, 443, 6, 1024L, 10L, 0x12, 5000L, 6000L);
+    }
+
+    // ── tests ───────────────────────────────────────────────────
 
     @Test
-    void decodeTemplateAndDataFlowSetsReturnsRawRecords() {
-        Instant receivedAt = Instant.parse("2026-06-24T12:00:00Z");
+    @DisplayName("Template then Data → returns decoded records")
+    void decode_templateThenData_returnsRecords() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        writeDefaultDataFlowSet(buf);
 
-        List<RawFlowRecord> records =
-                decoder.decode(Unpooled.wrappedBuffer(packetWithTemplateAndData()), "198.51.100.7", receivedAt);
+        List<RawFlowRecord> records = decoder.decode(buf, EXPORTER_IP, RECEIVED_AT);
 
         assertThat(records).hasSize(1);
-        RawFlowRecord record = records.getFirst();
-        assertThat(record.sourceType()).isEqualTo("netflow-v9");
-        assertThat(record.exporterIp()).isEqualTo("198.51.100.7");
-        assertThat(record.receivedAt()).isEqualTo(receivedAt);
-
-        Map<String, Object> fields = record.fields();
-        assertThat(fields)
-                .containsEntry("version", 9)
-                .containsEntry("packet_record_count", 1)
-                .containsEntry("record_index", 0)
-                .containsEntry("sys_uptime_ms", 1_000_000L)
-                .containsEntry("flow_sequence", 100L)
-                .containsEntry("source_id", 123L)
-                .containsEntry("template_id", 256)
-                .containsEntry("src_ip", "10.0.0.3")
-                .containsEntry("dst_ip", "198.51.100.9")
-                .containsEntry("src_port", 12_345)
-                .containsEntry("dst_port", 443)
-                .containsEntry("protocol_number", 6)
-                .containsEntry("protocol", "tcp")
-                .containsEntry("tcp_flags", 19)
-                .containsEntry("bytes", 9_876L)
-                .containsEntry("packets", 10L)
-                .containsEntry("first_switched_ms", 999_000L)
-                .containsEntry("last_switched_ms", 999_800L)
-                .containsEntry("ts_start", Instant.parse("2023-11-14T22:13:19Z"))
-                .containsEntry("ts_end", Instant.parse("2023-11-14T22:13:19.800Z"))
-                .containsEntry("duration_ms", 800L);
+        Map<String, Object> f = records.get(0).fields();
+        assertThat(f.get("src_ip")).isEqualTo("10.0.0.1");
+        assertThat(f.get("dst_ip")).isEqualTo("192.168.1.1");
+        assertThat(f.get("src_port")).isEqualTo(54321);
+        assertThat(f.get("dst_port")).isEqualTo(443);
+        assertThat(f.get("protocol")).isEqualTo("tcp");
+        assertThat(f.get("bytes")).isEqualTo(1024L);
+        assertThat(f.get("packets")).isEqualTo(10L);
+        assertThat(f.get("tcp_flags")).isEqualTo(0x12);
+        assertThat(records.get(0).sourceType()).isEqualTo("netflow-v9");
     }
 
     @Test
-    void cachesTemplateAcrossPackets() {
-        Instant receivedAt = Instant.parse("2026-06-24T12:00:00Z");
+    @DisplayName("Data before template → throws missing template")
+    void decode_dataBeforeTemplate_throwsMissingTemplate() {
+        ByteBuf buf = Unpooled.buffer(64);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        // Write data FlowSet without prior template
+        buf.writeShort(256);    // flowSetId = 256 (data)
+        buf.writeShort(8);      // length = 8 (4 header + 4 data)
+        buf.writeInt(0xDEADBEEF);
 
-        assertThat(decoder.decode(Unpooled.wrappedBuffer(templateOnlyPacket()), "198.51.100.7", receivedAt))
-                .isEmpty();
-
-        List<RawFlowRecord> records =
-                decoder.decode(Unpooled.wrappedBuffer(dataOnlyPacket()), "198.51.100.7", receivedAt);
-
-        assertThat(records).hasSize(1);
-        assertThat(records.getFirst().fields()).containsEntry("src_ip", "10.0.0.3");
-    }
-
-    @Test
-    void rejectsDataWithoutTemplate() {
-        assertThatThrownBy(
-                        () ->
-                                new NetFlowV9Decoder()
-                                        .decode(
-                                                Unpooled.wrappedBuffer(dataOnlyPacket()),
-                                                "198.51.100.7",
-                                                Instant.now()))
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
                 .isInstanceOf(NetFlowV9DecodeException.class)
-                .hasMessageContaining("Missing NetFlow v9 template");
+                .hasMessageContaining("Missing");
     }
 
-    static byte[] packetWithTemplateAndData() {
-        ByteBuffer buffer =
-                ByteBuffer.allocate(NetFlowV9Protocol.HEADER_LENGTH + templateFlowSetLength() + dataFlowSetLength())
-                        .order(ByteOrder.BIG_ENDIAN);
-        putHeader(buffer);
-        putTemplateFlowSet(buffer);
-        putDataFlowSet(buffer);
-        return buffer.array();
+    @Test
+    @DisplayName("Packet too short (<20 bytes) → throws")
+    void decode_packetTooShort_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(10);
+        buf.writeBytes(new byte[10]);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("too short");
     }
 
-    static byte[] templateOnlyPacket() {
-        ByteBuffer buffer =
-                ByteBuffer.allocate(NetFlowV9Protocol.HEADER_LENGTH + templateFlowSetLength())
-                        .order(ByteOrder.BIG_ENDIAN);
-        putHeader(buffer);
-        putTemplateFlowSet(buffer);
-        return buffer.array();
+    @Test
+    @DisplayName("Wrong version (5) → throws")
+    void decode_wrongVersion_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN);
+        buf.writeShort(5); // wrong version
+        buf.writeShort(0);
+        buf.writeBytes(new byte[V9_HEADER_LEN - 4]);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("Unsupported");
     }
 
-    static byte[] dataOnlyPacket() {
-        ByteBuffer buffer =
-                ByteBuffer.allocate(NetFlowV9Protocol.HEADER_LENGTH + dataFlowSetLength())
-                        .order(ByteOrder.BIG_ENDIAN);
-        putHeader(buffer);
-        putDataFlowSet(buffer);
-        return buffer.array();
+    @Test
+    @DisplayName("FlowSet length < 4 → throws")
+    void decode_invalidFlowSetLength_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN + 4);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(0);  // flowSetId
+        buf.writeShort(2);  // length < 4
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("Invalid");
     }
 
-    private static void putHeader(ByteBuffer buffer) {
-        buffer.putShort((short) 9);
-        buffer.putShort((short) 1);
-        buffer.putInt(1_000_000);
-        buffer.putInt(1_700_000_000);
-        buffer.putInt(100);
-        buffer.putInt(123);
+    @Test
+    @DisplayName("Truncated FlowSet (extends past packet) → throws")
+    void decode_truncatedFlowSet_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN + 4);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(0);     // flowSetId
+        buf.writeShort(100);   // length far beyond packet
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("truncated");
     }
 
-    private static void putTemplateFlowSet(ByteBuffer buffer) {
-        buffer.putShort((short) 0);
-        buffer.putShort((short) templateFlowSetLength());
-        buffer.putShort((short) 256);
-        buffer.putShort((short) 10);
-        putField(buffer, 8, 4);
-        putField(buffer, 12, 4);
-        putField(buffer, 7, 2);
-        putField(buffer, 11, 2);
-        putField(buffer, 4, 1);
-        putField(buffer, 6, 1);
-        putField(buffer, 1, 4);
-        putField(buffer, 2, 4);
-        putField(buffer, 22, 4);
-        putField(buffer, 21, 4);
+    @Test
+    @DisplayName("Options template → data records for that template are skipped")
+    void decode_optionsTemplate_skipsDataRecords() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+
+        // Options template FlowSet (flowSetId=1)
+        int scopeLen = 4;   // 1 scope field
+        int optionLen = 4;  // 1 option field
+        int flowSetLen = 4 + 6 + scopeLen + optionLen; // hdr + tmpl hdr(6B) + fields
+        buf.writeShort(1);           // flowSetId = options template
+        buf.writeShort(flowSetLen);
+        buf.writeShort(257);         // templateId
+        buf.writeShort(scopeLen);    // scope length
+        buf.writeShort(optionLen);   // option length
+        buf.writeShort(1);           // scope field type
+        buf.writeShort(4);           // scope field length
+        buf.writeShort(40);          // option field type
+        buf.writeShort(4);           // option field length
+
+        // Data FlowSet for template 257 (will be options → skipped)
+        buf.writeShort(257);
+        buf.writeShort(12);          // length = 4 hdr + 8 data
+        buf.writeInt(0x11111111);
+        buf.writeInt(0x22222222);
+
+        List<RawFlowRecord> records = decoder.decode(buf, EXPORTER_IP, RECEIVED_AT);
+        assertThat(records).isEmpty();
     }
 
-    private static void putDataFlowSet(ByteBuffer buffer) {
-        buffer.putShort((short) 256);
-        buffer.putShort((short) dataFlowSetLength());
-        buffer.putInt(ip(10, 0, 0, 3));
-        buffer.putInt(ip(198, 51, 100, 9));
-        buffer.putShort((short) 12_345);
-        buffer.putShort((short) 443);
-        buffer.put((byte) 6);
-        buffer.put((byte) 19);
-        buffer.putInt(9_876);
-        buffer.putInt(10);
-        buffer.putInt(999_000);
-        buffer.putInt(999_800);
-        buffer.putShort((short) 0);
+    @Test
+    @DisplayName("Template update replaces old template")
+    void decode_templateUpdate_replacesOldTemplate() {
+        // First packet: template 256 with 10 fields (record = 30B)
+        ByteBuf buf1 = Unpooled.buffer(256);
+        writeV9Header(buf1, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf1);
+        decoder.decode(buf1, EXPORTER_IP, RECEIVED_AT);
+
+        // Second packet: redefine template 256 with only 2 fields (src_ip + dst_ip = 8B)
+        ByteBuf buf2 = Unpooled.buffer(256);
+        writeV9Header(buf2, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        int flowSetLen2 = 4 + 4 + 2 * 4;  // hdr + tmpl hdr + 2 fields
+        buf2.writeShort(0);
+        buf2.writeShort(flowSetLen2);
+        buf2.writeShort(256);
+        buf2.writeShort(2);
+        buf2.writeShort(8);  buf2.writeShort(4);  // src_ip
+        buf2.writeShort(12); buf2.writeShort(4);  // dst_ip
+
+        // Data FlowSet with 8-byte record
+        buf2.writeShort(256);
+        buf2.writeShort(12);  // 4 + 8 bytes
+        buf2.writeInt((int) 0x0A0A0A0AL);   // src_ip = 10.10.10.10
+        buf2.writeInt((int) 0xC0A80202L);   // dst_ip = 192.168.2.2
+
+        List<RawFlowRecord> records = decoder.decode(buf2, EXPORTER_IP, RECEIVED_AT);
+        assertThat(records).hasSize(1);
+        assertThat(records.get(0).fields().get("src_ip")).isEqualTo("10.10.10.10");
+        assertThat(records.get(0).fields().get("dst_ip")).isEqualTo("192.168.2.2");
     }
 
-    private static void putField(ByteBuffer buffer, int type, int length) {
-        buffer.putShort((short) type);
-        buffer.putShort((short) length);
+    @Test
+    @DisplayName("Multiple data FlowSets → all records returned")
+    void decode_multipleDataFlowSets_returnsAllRecords() {
+        ByteBuf buf = Unpooled.buffer(512);
+        writeV9Header(buf, 2, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        writeDefaultDataFlowSet(buf);
+        writeStdDataFlowSet(buf, 0xC0A80202L, 0x0A0A0A0AL,
+                80, 8080, 17, 2048L, 20L, 0, 7000L, 8000L);
+
+        List<RawFlowRecord> records = decoder.decode(buf, EXPORTER_IP, RECEIVED_AT);
+        assertThat(records).hasSize(2);
     }
 
-    private static int templateFlowSetLength() {
-        return 4 + 4 + (10 * 4);
+    @Test
+    @DisplayName("Trailing zero padding after last FlowSet → accepted")
+    void decode_paddingAfterRecords_accepted() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        // Add 3 bytes of zero padding (< 4, so won't be parsed as FlowSet header)
+        buf.writeBytes(new byte[3]);
+
+        // Should not throw
+        decoder.decode(buf, EXPORTER_IP, RECEIVED_AT);
     }
 
-    private static int dataFlowSetLength() {
-        return 4 + 30 + 2;
+    @Test
+    @DisplayName("Non-zero trailing bytes → throws")
+    void decode_nonZeroTrailingBytes_throwsException() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        // Add non-zero trailing bytes
+        buf.writeByte(0xFF);
+        buf.writeByte(0x01);
+        buf.writeByte(0x02);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class);
     }
 
-    private static int ip(int a, int b, int c, int d) {
-        return (a << 24) | (b << 16) | (c << 8) | d;
+    @Test
+    @DisplayName("IPv4 fields parsed as dotted-decimal strings")
+    void decode_ipv4Fields_parsedAsStrings() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        writeStdDataFlowSet(buf, 0xAC100164L, 0x08080808L,
+                12345, 80, 6, 512L, 5L, 0x02, 5000L, 6000L);
+
+        Map<String, Object> f = decoder.decode(buf, EXPORTER_IP, RECEIVED_AT).get(0).fields();
+        assertThat(f.get("src_ip")).isEqualTo("172.16.1.100");
+        assertThat(f.get("dst_ip")).isEqualTo("8.8.8.8");
+    }
+
+    @Test
+    @DisplayName("tcp_flags field parsed as Integer")
+    void decode_tcpFlagsField_parsedAsInt() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        writeDefaultDataFlowSet(buf);
+
+        Map<String, Object> f = decoder.decode(buf, EXPORTER_IP, RECEIVED_AT).get(0).fields();
+        assertThat(f.get("tcp_flags")).isInstanceOf(Integer.class);
+        assertThat(f.get("tcp_flags")).isEqualTo(0x12);
+    }
+
+    @Test
+    @DisplayName("finishRecord computes ts_start, ts_end, duration_ms")
+    void decode_finishRecord_computesTsStartTsEndDuration() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        writeStdDataFlowSet(buf, 0x0A000001L, 0xC0A80101L,
+                80, 443, 6, 100L, 5L, 0x02, 50_000L, 51_000L);
+
+        Map<String, Object> f = decoder.decode(buf, EXPORTER_IP, RECEIVED_AT).get(0).fields();
+        assertThat(f.get("ts_start")).isInstanceOf(Instant.class);
+        assertThat(f.get("ts_end")).isInstanceOf(Instant.class);
+        assertThat(f.get("duration_ms")).isEqualTo(1000L);  // 51000 - 50000
+    }
+
+    @Test
+    @DisplayName("Sampling interval field sets sampled flag")
+    void decode_samplingIntervalField_setsSampledFlag() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+
+        // Template with sampling_interval field (type=34, 2B) added
+        int[][] fields = {
+            {8, 4}, {12, 4}, {7, 2}, {11, 2}, {4, 1},
+            {1, 4}, {2, 4}, {6, 1}, {22, 4}, {21, 4}, {34, 2}
+        };
+        int fieldCount = fields.length;
+        int flowSetLen = 4 + 4 + fieldCount * 4;
+        buf.writeShort(0);
+        buf.writeShort(flowSetLen);
+        buf.writeShort(256);
+        buf.writeShort(fieldCount);
+        for (int[] f : fields) {
+            buf.writeShort(f[0]);
+            buf.writeShort(f[1]);
+        }
+
+        // Data FlowSet: record = 30 + 2 = 32 bytes
+        buf.writeShort(256);
+        buf.writeShort(4 + 32);
+        buf.writeInt((int) 0x0A000001L);    // src_ip
+        buf.writeInt((int) 0xC0A80101L);    // dst_ip
+        buf.writeShort(80);                 // src_port
+        buf.writeShort(443);                // dst_port
+        buf.writeByte(6);                   // protocol = TCP
+        buf.writeInt(1024);                 // bytes
+        buf.writeInt(10);                   // packets
+        buf.writeByte(0x02);                // tcp_flags
+        buf.writeInt(50_000);               // first_switched
+        buf.writeInt(51_000);               // last_switched
+        buf.writeShort(100);                // sampling_interval = 100
+
+        Map<String, Object> f = decoder.decode(buf, EXPORTER_IP, RECEIVED_AT).get(0).fields();
+        assertThat(f.get("sampling_interval")).isEqualTo(100L);
+        assertThat(f.get("sampling_rate")).isEqualTo(100L);
+        assertThat(f.get("sampled")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("Null packet → NPE")
+    void decode_nullPacket_throwsNPE() {
+        assertThatThrownBy(() -> decoder.decode(null, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    @DisplayName("Exporter key includes port when port >= 0")
+    void decode_exporterKeyWithPort() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        writeDefaultDataFlowSet(buf);
+
+        // Decode with port=2055 → should use that exporter key internally
+        List<RawFlowRecord> records = decoder.decode(buf, EXPORTER_IP, 2055, RECEIVED_AT);
+        assertThat(records).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Exporter key is just IP when port = -1")
+    void decode_exporterKeyWithoutPort() {
+        ByteBuf buf = Unpooled.buffer(256);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        writeStdTemplateFlowSet(buf);
+        writeDefaultDataFlowSet(buf);
+
+        List<RawFlowRecord> records = decoder.decode(buf, EXPORTER_IP, -1, RECEIVED_AT);
+        assertThat(records).hasSize(1);
     }
 }

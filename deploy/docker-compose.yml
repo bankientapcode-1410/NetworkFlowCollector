@@ -5,12 +5,61 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       CLICKHOUSE_URL: ${CLICKHOUSE_URL:-jdbc:clickhouse://clickhouse:8123/default}
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-kien}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-2606}
+      NFC_KAFKA_ENABLED: ${NFC_KAFKA_ENABLED:-true}
+      NFC_KAFKA_BOOTSTRAP_SERVERS: ${NFC_KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
+      NFC_KAFKA_RAW_TOPIC: ${NFC_KAFKA_RAW_TOPIC:-raw-flows}
+      NFC_KAFKA_DLQ_TOPIC: ${NFC_KAFKA_DLQ_TOPIC:-dead-letter-flows}
+      NFC_NETFLOW_ENABLED: ${NFC_NETFLOW_ENABLED:-true}
     ports:
       - "8080:8080"
+      - "2055:2055/udp"
+
+  kafka:
+    image: bitnami/kafka:3.7.0
+    environment:
+      KAFKA_ENABLE_KRAFT: "yes"
+      KAFKA_CFG_NODE_ID: 1
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:29092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_CFG_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    ports:
+      - "29092:29092"
+    volumes:
+      - kafka-data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  kafka-init:
+    image: bitnami/kafka:3.7.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - |
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic raw-flows --partitions 12 --replication-factor 1
+        /opt/bitnami/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic dead-letter-flows --partitions 3 --replication-factor 1
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.3
@@ -39,3 +88,4 @@ services:
 
 volumes:
   ch-data:
+  kafka-data:

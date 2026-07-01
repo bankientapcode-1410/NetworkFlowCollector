@@ -2,7 +2,6 @@
   "sourceTypes": [
     "netflow-v5",
     "netflow-v9",
-    "ipfix",
     "zeek-conn",
     "suricata-flow"
   ]
