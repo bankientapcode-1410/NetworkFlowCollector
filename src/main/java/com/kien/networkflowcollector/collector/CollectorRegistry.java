@@ -11,10 +11,14 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.SmartLifecycle;
 
 public class CollectorRegistry implements SmartLifecycle {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(CollectorRegistry.class);
 
     private final CollectorProperties properties;
     private final ObjectProvider<FlowPublisher> publisherProvider;
@@ -46,13 +50,7 @@ public class CollectorRegistry implements SmartLifecycle {
         }
         startedCollectors.clear();
         for (FlowCollector collector : collectorsByType.values()) {
-            CollectorConfig config = properties.configFor(collector.type());
-            FlowPublisher publisher = config.enabled() ? requiredPublisher(collector) : publisherProvider.getIfAvailable();
-            collector.init(config, publisher);
-            if (config.enabled()) {
-                collector.start();
-                startedCollectors.add(collector);
-            }
+            startCollector(collector);
         }
     }
 
@@ -62,7 +60,7 @@ public class CollectorRegistry implements SmartLifecycle {
             return;
         }
         for (int i = startedCollectors.size() - 1; i >= 0; i--) {
-            startedCollectors.get(i).stop();
+            stopCollector(startedCollectors.get(i));
         }
         startedCollectors.clear();
     }
@@ -86,6 +84,30 @@ public class CollectorRegistry implements SmartLifecycle {
                             + " is enabled but no FlowPublisher bean is available");
         }
         return publisher;
+    }
+
+    private void startCollector(FlowCollector collector) {
+        String collectorType = collector.type();
+        try {
+            CollectorConfig config = properties.configFor(collectorType);
+            FlowPublisher publisher =
+                    config.enabled() ? requiredPublisher(collector) : publisherProvider.getIfAvailable();
+            collector.init(config, publisher);
+            if (config.enabled()) {
+                collector.start();
+                startedCollectors.add(collector);
+            }
+        } catch (RuntimeException e) {
+            LOGGER.error("Collector {} failed during init/start and will remain down", collectorType, e);
+        }
+    }
+
+    private void stopCollector(FlowCollector collector) {
+        try {
+            collector.stop();
+        } catch (RuntimeException e) {
+            LOGGER.error("Collector {} failed during stop", collector.type(), e);
+        }
     }
 
     private static Collection<FlowCollector> loadFromServiceLoader() {

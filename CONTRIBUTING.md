@@ -2,7 +2,7 @@
 
 ## Adding A Collector
 
-1. Create a new package under `src/main/java/com/kien/networkflowcollector/collectors/<format>`.
+1. Create a new package under `src/main/java/com/kien/networkflowcollector/plugins/<format>`.
 2. Implement `FlowCollector` and declare every emitted `sourceType`.
 3. Add one `FlowNormalizer` for each source type.
 4. Register implementations with Java SPI under `src/main/resources/META-INF/services` when discovery is needed.

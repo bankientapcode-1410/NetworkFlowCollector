@@ -10,16 +10,20 @@ import com.kien.networkflowcollector.storage.FlowStore;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
+import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,6 +45,8 @@ public class KafkaFlowConsumer implements SmartLifecycle {
     private volatile Thread worker;
     private volatile org.apache.kafka.clients.consumer.Consumer<String, String> consumer;
     private volatile boolean paused;
+    private volatile long pausedUntilNanos;
+    private int pauseAttempts;
 
     public KafkaFlowConsumer(
             KafkaFlowProperties properties,
@@ -83,6 +89,9 @@ public class KafkaFlowConsumer implements SmartLifecycle {
             LOGGER.warn("Kafka consumer not started because normalizer coverage is incomplete");
             return;
         }
+        paused = false;
+        pausedUntilNanos = 0;
+        pauseAttempts = 0;
         Thread newWorker = new Thread(this::pollLoop, "kafka-flow-consumer");
         newWorker.setDaemon(true);
         worker = newWorker;
@@ -125,20 +134,37 @@ public class KafkaFlowConsumer implements SmartLifecycle {
     private void pollLoop() {
         try (org.apache.kafka.clients.consumer.Consumer<String, String> kafkaConsumer = consumerSupplier.get()) {
             consumer = kafkaConsumer;
-            kafkaConsumer.subscribe(List.of(properties.getRawTopic()));
+            kafkaConsumer.subscribe(
+                    List.of(properties.getRawTopic()),
+                    new ConsumerRebalanceListener() {
+                        @Override
+                        public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                            // Processing code owns commits; rebalance callbacks only keep pause state.
+                        }
+
+                        @Override
+                        public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                            if (paused && !partitions.isEmpty()) {
+                                kafkaConsumer.pause(partitions);
+                            }
+                        }
+                    });
             while (running.get()) {
                 if (paused) {
-                    sleep(Duration.ofSeconds(1));
+                    pauseAssignedPartitions(kafkaConsumer);
+                    ConsumerRecords<String, String> records = pollRecords(kafkaConsumer);
+                    rewindPausedRecords(kafkaConsumer, records);
+                    maybeResumeConsumption(kafkaConsumer);
                     continue;
                 }
-                ConsumerRecords<String, String> records =
-                        kafkaConsumer.poll(properties.getConsumer().getPollTimeoutMs());
+                ConsumerRecords<String, String> records = pollRecords(kafkaConsumer);
                 if (records.isEmpty()) {
                     continue;
                 }
                 try {
                     if (processBatch(records)) {
                         kafkaConsumer.commitSync();
+                        markProcessingHealthy();
                     }
                 } catch (NormalizationServiceNotReadyException e) {
                     pauseConsumption(
@@ -170,7 +196,11 @@ public class KafkaFlowConsumer implements SmartLifecycle {
                         == KafkaFlowProperties.StorageFailurePolicy.DLQ) {
                     publishDeadLetters(
                             processed.validRawRecords().stream()
-                                    .map(raw -> deadLetter(raw, null, "storage_retry_exhausted", e))
+                                    .map(raw -> deadLetter(
+                                            raw.record(),
+                                            raw.rawPayload(),
+                                            "storage_retry_exhausted",
+                                            e))
                                     .toList());
                 } else {
                     pauseConsumption("ClickHouse insert failed after retry; offsets remain uncommitted", e);
@@ -189,7 +219,7 @@ public class KafkaFlowConsumer implements SmartLifecycle {
     }
 
     private ProcessedBatch normalizeRecords(ConsumerRecords<String, String> records) {
-        List<RawFlowRecord> validRawRecords = new ArrayList<>();
+        List<DecodedRawRecord> validRawRecords = new ArrayList<>();
         List<NormalizedFlow> validFlows = new ArrayList<>();
         List<DeadLetterFlowRecord> deadLetters = new ArrayList<>();
 
@@ -198,7 +228,7 @@ public class KafkaFlowConsumer implements SmartLifecycle {
             try {
                 raw = codec.decode(record.value());
                 validFlows.add(normalizationService.normalize(raw));
-                validRawRecords.add(raw);
+                validRawRecords.add(new DecodedRawRecord(raw, record.value()));
             } catch (NormalizationServiceNotReadyException e) {
                 throw e;
             } catch (RawFlowRecordCodecException e) {
@@ -260,19 +290,75 @@ public class KafkaFlowConsumer implements SmartLifecycle {
 
     private void pauseConsumption(String message, RuntimeException error) {
         paused = true;
+        pauseAttempts++;
+        pausedUntilNanos = System.nanoTime() + backoff(pauseAttempts).toNanos();
         org.apache.kafka.clients.consumer.Consumer<String, String> currentConsumer = consumer;
         if (currentConsumer != null) {
-            currentConsumer.pause(currentConsumer.assignment());
+            pauseAssignedPartitions(currentConsumer);
         }
         LOGGER.error(message, error);
+    }
+
+    private ConsumerRecords<String, String> pollRecords(
+            org.apache.kafka.clients.consumer.Consumer<String, String> kafkaConsumer) {
+        try {
+            return kafkaConsumer.poll(properties.getConsumer().getPollTimeoutMs());
+        } catch (WakeupException e) {
+            throw e;
+        } catch (KafkaException e) {
+            pauseConsumption("Kafka poll failed; consumer will retry after backoff", e);
+            return ConsumerRecords.empty();
+        }
+    }
+
+    private void pauseAssignedPartitions(
+            org.apache.kafka.clients.consumer.Consumer<String, String> kafkaConsumer) {
+        Set<TopicPartition> assignment = kafkaConsumer.assignment();
+        if (!assignment.isEmpty()) {
+            kafkaConsumer.pause(assignment);
+        }
+    }
+
+    private void maybeResumeConsumption(
+            org.apache.kafka.clients.consumer.Consumer<String, String> kafkaConsumer) {
+        if (!normalizationService.ready() || System.nanoTime() - pausedUntilNanos < 0) {
+            return;
+        }
+        Set<TopicPartition> assignment = kafkaConsumer.assignment();
+        if (!assignment.isEmpty()) {
+            kafkaConsumer.resume(assignment);
+        }
+        paused = false;
+        LOGGER.info("Kafka consumer resumed after pause");
+    }
+
+    private void rewindPausedRecords(
+            org.apache.kafka.clients.consumer.Consumer<String, String> kafkaConsumer,
+            ConsumerRecords<String, String> records) {
+        if (records.isEmpty()) {
+            return;
+        }
+        for (TopicPartition partition : records.partitions()) {
+            List<ConsumerRecord<String, String>> partitionRecords = records.records(partition);
+            if (!partitionRecords.isEmpty()) {
+                kafkaConsumer.seek(partition, partitionRecords.getFirst().offset());
+            }
+        }
+    }
+
+    private void markProcessingHealthy() {
+        pauseAttempts = 0;
+        pausedUntilNanos = 0;
     }
 
     private Duration backoff(int attempt) {
         long baseMs = Math.max(1, properties.getConsumer().getRetryBaseDelayMs().toMillis());
         long maxMs = Math.max(baseMs, properties.getConsumer().getRetryMaxDelayMs().toMillis());
-        long exponential = baseMs * (1L << Math.min(20, attempt - 1));
+        long multiplier = 1L << Math.min(20, Math.max(0, attempt - 1));
+        long exponential = baseMs > Long.MAX_VALUE / multiplier ? Long.MAX_VALUE : baseMs * multiplier;
         long jitter = ThreadLocalRandom.current().nextLong(baseMs);
-        return Duration.ofMillis(Math.min(maxMs, exponential + jitter));
+        long delayMs = exponential > Long.MAX_VALUE - jitter ? Long.MAX_VALUE : exponential + jitter;
+        return Duration.ofMillis(Math.min(maxMs, delayMs));
     }
 
     private static void sleep(Duration duration) {
@@ -291,7 +377,9 @@ public class KafkaFlowConsumer implements SmartLifecycle {
     }
 
     private record ProcessedBatch(
-            List<RawFlowRecord> validRawRecords,
+            List<DecodedRawRecord> validRawRecords,
             List<NormalizedFlow> validFlows,
             List<DeadLetterFlowRecord> deadLetters) {}
+
+    private record DecodedRawRecord(RawFlowRecord record, String rawPayload) {}
 }

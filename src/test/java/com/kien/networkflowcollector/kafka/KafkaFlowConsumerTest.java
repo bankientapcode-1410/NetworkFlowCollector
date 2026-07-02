@@ -3,7 +3,8 @@ package com.kien.networkflowcollector.kafka;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -21,13 +22,13 @@ import com.kien.networkflowcollector.storage.FlowStore;
 import com.kien.networkflowcollector.storage.WriteReceipt;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import org.apache.kafka.clients.consumer.Consumer;
@@ -237,18 +238,23 @@ class KafkaFlowConsumerTest {
     @DisplayName("Store failure with DLQ policy → sends to DLQ")
     void processBatch_storeFailsWithDLQPolicy_sendsAllToDLQ() throws Exception {
         properties.getConsumer().setStorageFailurePolicy(KafkaFlowProperties.StorageFailurePolicy.DLQ);
+        String payload = "{\"data\":1}";
 
         RawFlowRecord raw = rawRecord();
         NormalizedFlow flow = mock(NormalizedFlow.class);
         when(codec.decode(any())).thenReturn(raw);
         when(normalizationService.normalize(any())).thenReturn(flow);
         when(flowStore.batchInsert(anyList())).thenThrow(new RuntimeException("ClickHouse down"));
-        when(dlqPublisher.publish(any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(dlqPublisher.publish(any())).thenAnswer(inv -> {
+            DeadLetterFlowRecord dlq = inv.getArgument(0);
+            assertThat(dlq.rawPayload()).isEqualTo(payload);
+            return CompletableFuture.completedFuture(null);
+        });
 
         AtomicInteger pollCount = new AtomicInteger();
         when(kafkaConsumer.poll(any(Duration.class))).thenAnswer(inv -> {
             if (pollCount.getAndIncrement() == 0) {
-                return singleRecord("{\"data\":1}");
+                return singleRecord(payload);
             }
             return ConsumerRecords.empty();
         });
@@ -265,6 +271,9 @@ class KafkaFlowConsumerTest {
     @DisplayName("Store failure with PAUSE policy → pauses consumer, no commit")
     void processBatch_storeFailsWithPausePolicy_pausesConsumer() throws Exception {
         properties.getConsumer().setStorageFailurePolicy(KafkaFlowProperties.StorageFailurePolicy.PAUSE);
+        properties.getConsumer().setRetryMaxAttempts(1);
+        properties.getConsumer().setRetryBaseDelayMs(Duration.ofSeconds(5));
+        properties.getConsumer().setRetryMaxDelayMs(Duration.ofSeconds(5));
 
         RawFlowRecord raw = rawRecord();
         NormalizedFlow flow = mock(NormalizedFlow.class);
@@ -284,9 +293,9 @@ class KafkaFlowConsumerTest {
         consumer = createConsumer();
         consumer.start();
 
-        // Consumer should be paused
-        Thread.sleep(500);
+        verify(kafkaConsumer, timeout(2000).atLeastOnce()).pause(Set.of(TP0));
         assertThat(consumer.isPaused()).isTrue();
+        verify(kafkaConsumer, never()).commitSync();
 
         consumer.stop();
     }
@@ -294,6 +303,8 @@ class KafkaFlowConsumerTest {
     @Test
     @DisplayName("DLQ publish fails → pauses consumer")
     void processBatch_dlqPublishFails_pausesConsumer() throws Exception {
+        properties.getConsumer().setRetryBaseDelayMs(Duration.ofSeconds(5));
+        properties.getConsumer().setRetryMaxDelayMs(Duration.ofSeconds(5));
         when(codec.decode(any())).thenThrow(new RawFlowRecordCodecException("bad", new Exception()));
         when(dlqPublisher.publish(any())).thenReturn(
                 CompletableFuture.failedFuture(new RuntimeException("DLQ down")));
@@ -310,8 +321,67 @@ class KafkaFlowConsumerTest {
         consumer = createConsumer();
         consumer.start();
 
-        Thread.sleep(500);
+        verify(kafkaConsumer, timeout(2000).atLeastOnce()).pause(Set.of(TP0));
         assertThat(consumer.isPaused()).isTrue();
+        verify(kafkaConsumer, never()).commitSync();
+
+        consumer.stop();
+    }
+
+    @Test
+    @DisplayName("Paused consumer keeps polling, then resumes after backoff")
+    void processBatch_pausedConsumerPollsAndResumes() throws Exception {
+        properties.getConsumer().setRetryBaseDelayMs(Duration.ofMillis(20));
+        properties.getConsumer().setRetryMaxDelayMs(Duration.ofMillis(20));
+
+        AtomicBoolean kafkaPaused = new AtomicBoolean();
+        CountDownLatch pausedPoll = new CountDownLatch(1);
+        CountDownLatch committed = new CountDownLatch(1);
+        when(kafkaConsumer.assignment()).thenReturn(Set.of(TP0));
+        doAnswer(inv -> {
+                    kafkaPaused.set(true);
+                    return null;
+                })
+                .when(kafkaConsumer)
+                .pause(any());
+        doAnswer(inv -> {
+                    kafkaPaused.set(false);
+                    return null;
+                })
+                .when(kafkaConsumer)
+                .resume(any());
+        doAnswer(inv -> {
+                    committed.countDown();
+                    return null;
+                })
+                .when(kafkaConsumer)
+                .commitSync();
+
+        when(codec.decode(any())).thenThrow(new RawFlowRecordCodecException("bad", new Exception()));
+        when(dlqPublisher.publish(any()))
+                .thenReturn(
+                        CompletableFuture.failedFuture(new RuntimeException("DLQ down")),
+                        CompletableFuture.completedFuture(null));
+
+        AtomicInteger activePolls = new AtomicInteger();
+        when(kafkaConsumer.poll(any(Duration.class))).thenAnswer(inv -> {
+            if (kafkaPaused.get()) {
+                pausedPoll.countDown();
+                return ConsumerRecords.empty();
+            }
+            if (activePolls.getAndIncrement() < 2) {
+                return singleRecord("{bad}");
+            }
+            return ConsumerRecords.empty();
+        });
+
+        consumer = createConsumer();
+        consumer.start();
+
+        assertThat(pausedPoll.await(2, TimeUnit.SECONDS)).isTrue();
+        assertThat(committed.await(2, TimeUnit.SECONDS)).isTrue();
+        verify(kafkaConsumer, timeout(2000)).resume(Set.of(TP0));
+        verify(kafkaConsumer, atLeast(3)).poll(any(Duration.class));
 
         consumer.stop();
     }
@@ -319,6 +389,8 @@ class KafkaFlowConsumerTest {
     @Test
     @DisplayName("Normalization not ready on record processing → pauses consumer")
     void processBatch_normalizationNotReady_pausesConsumer() throws Exception {
+        properties.getConsumer().setRetryBaseDelayMs(Duration.ofSeconds(5));
+        properties.getConsumer().setRetryMaxDelayMs(Duration.ofSeconds(5));
         RawFlowRecord raw = rawRecord();
         when(codec.decode(any())).thenReturn(raw);
         NormalizerCoverage coverage = NormalizerCoverage.of(
@@ -338,8 +410,9 @@ class KafkaFlowConsumerTest {
         consumer = createConsumer();
         consumer.start();
 
-        Thread.sleep(500);
+        verify(kafkaConsumer, timeout(2000).atLeastOnce()).pause(Set.of(TP0));
         assertThat(consumer.isPaused()).isTrue();
+        verify(kafkaConsumer, never()).commitSync();
 
         consumer.stop();
     }
@@ -354,6 +427,26 @@ class KafkaFlowConsumerTest {
 
         assertThat(consumer.isRunning()).isFalse();
         assertThat(consumer.isPaused()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Start after initial normalizer outage clears stale pause flag")
+    void start_afterInitialNormalizerOutage_clearsPauseFlag() {
+        when(normalizationService.ready()).thenReturn(false, true);
+        when(kafkaConsumer.poll(any(Duration.class))).thenReturn(ConsumerRecords.empty());
+
+        consumer = createConsumer();
+        consumer.start();
+
+        assertThat(consumer.isRunning()).isFalse();
+        assertThat(consumer.isPaused()).isTrue();
+
+        consumer.start();
+
+        assertThat(consumer.isRunning()).isTrue();
+        assertThat(consumer.isPaused()).isFalse();
+
+        consumer.stop();
     }
 
     @Test

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.kien.networkflowcollector.spi.RawFlowRecord;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,6 +64,23 @@ class RawFlowRecordJsonCodecTest {
         assertThat(decoded.sourceType()).isEqualTo(original.sourceType());
         assertThat(decoded.exporterIp()).isEqualTo(original.exporterIp());
         assertThat(decoded.receivedAt()).isEqualTo(original.receivedAt());
+    }
+
+    @Test
+    @DisplayName("Decode fields → keeps source fields in normalizer-compatible JSON types")
+    void decode_fieldsRemainNormalizerCompatible() {
+        Instant tsStart = Instant.parse("2026-06-19T08:00:00Z");
+        RawFlowRecord original = new RawFlowRecord(
+                "netflow-v5",
+                "10.0.0.1",
+                RECEIVED_AT,
+                Map.of("ts_start", tsStart, "bytes", 42L, "ratio", new BigDecimal("1.25")));
+
+        RawFlowRecord decoded = codec.decode(codec.encode(original));
+
+        assertThat(decoded.fields().get("ts_start")).hasToString(tsStart.toString());
+        assertThat(decoded.fields().get("bytes")).isInstanceOf(Number.class);
+        assertThat(decoded.fields().get("ratio")).isEqualTo(new BigDecimal("1.25"));
     }
 
     @Test

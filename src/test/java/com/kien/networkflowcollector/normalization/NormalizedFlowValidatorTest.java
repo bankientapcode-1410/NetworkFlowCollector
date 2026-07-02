@@ -104,6 +104,26 @@ class NormalizedFlowValidatorTest {
     }
 
     @Test
+    @DisplayName("Invalid exporterIp -> FlowValidationException(invalid_ip)")
+    void validate_invalidExporterIp_throwsException() {
+        NormalizedFlow flow = new NormalizedFlow(
+                UUID.randomUUID(), TS_START, TS_END, DURATION_MS,
+                "10.20.30.40", 54321, "93.184.216.34", 443,
+                "tcp", 18432L, 24L, 0x1b,
+                false, null, null,
+                "netflow-v5", "not-an-ip",
+                null, null, null, null, null, null,
+                Instant.now());
+
+        assertThatThrownBy(() -> validator.validate(flow))
+                .isInstanceOf(FlowValidationException.class)
+                .satisfies(ex -> {
+                    FlowValidationException fve = (FlowValidationException) ex;
+                    org.assertj.core.api.Assertions.assertThat(fve.reason()).isEqualTo("invalid_ip");
+                });
+    }
+
+    @Test
     @DisplayName("Port out of range → FlowValidationException(invalid_port)")
     void validate_portOutOfRange_throwsException() {
         NormalizedFlow flow = new NormalizedFlow(
