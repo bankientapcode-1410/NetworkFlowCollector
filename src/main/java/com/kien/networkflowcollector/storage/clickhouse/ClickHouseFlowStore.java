@@ -66,6 +66,7 @@ public class ClickHouseFlowStore implements FlowStore {
                 dst_country_code, dst_asn, dst_as_org, ingest_time
             ) VALUES (?, ?, ?, ?, toIPv6(?), ?, toIPv6(?), ?, ?, ?, ?, ?, ?, ?, ?, ?, toIPv6(?), ?, ?, ?, ?, ?, ?, ?)
             """;
+    private static final String TRUNCATE_SQL = "TRUNCATE TABLE IF EXISTS flows";
 
     private final ConnectionProvider connectionProvider;
 
@@ -83,6 +84,15 @@ public class ClickHouseFlowStore implements FlowStore {
         return () ->
                 DriverManager.getConnection(
                         properties.getUrl(), properties.getUser(), properties.getPassword());
+    }
+
+    public void truncate() {
+        try (Connection connection = connectionProvider.getConnection();
+                Statement statement = connection.createStatement()) {
+            statement.execute(TRUNCATE_SQL);
+        } catch (SQLException e) {
+            throw new RetryableStorageException("ClickHouse truncate failed", e);
+        }
     }
 
     @Override

@@ -1,6 +1,7 @@
 package com.kien.networkflowcollector.kafka;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.kien.networkflowcollector.metrics.PipelineMetrics;
 import com.kien.networkflowcollector.normalization.FlowNormalizationService;
 import com.kien.networkflowcollector.storage.FlowStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -21,8 +22,8 @@ public class KafkaFlowConfiguration {
     @Bean(destroyMethod = "close")
     @ConditionalOnProperty(prefix = "nfc.kafka", name = "enabled", havingValue = "true")
     KafkaFlowPublisher kafkaFlowPublisher(
-            KafkaFlowProperties properties, RawFlowRecordJsonCodec codec) {
-        return new KafkaFlowPublisher(properties, codec);
+            KafkaFlowProperties properties, RawFlowRecordJsonCodec codec, PipelineMetrics metrics) {
+        return new KafkaFlowPublisher(properties, codec, metrics);
     }
 
     @Bean(destroyMethod = "close")

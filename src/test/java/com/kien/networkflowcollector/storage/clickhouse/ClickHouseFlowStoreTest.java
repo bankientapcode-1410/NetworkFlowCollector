@@ -148,6 +148,17 @@ class ClickHouseFlowStoreTest {
     }
 
     @Test
+    @DisplayName("truncate clears the flows table for clean demo startup")
+    void truncate_executesTruncateStatement() {
+        RecordingJdbc jdbc = new RecordingJdbc(List.of());
+        ClickHouseFlowStore store = store(jdbc);
+
+        store.truncate();
+
+        assertThat(jdbc.executedSql()).isEqualTo("TRUNCATE TABLE IF EXISTS flows");
+    }
+
+    @Test
     @DisplayName("findById reads flows FINAL and maps a normalized flow")
     void findById_mapsFlow() {
         RecordingJdbc jdbc = new RecordingJdbc(List.of(flowRow(FIRST_ID, FIRST_TS)));
@@ -309,6 +320,7 @@ class ClickHouseFlowStoreTest {
         private final Map<Integer, Object> parameters = new LinkedHashMap<>();
         private int[] batchResult = new int[0];
         private String sql;
+        private String executedSql;
         private int prepareCount;
 
         private RecordingJdbc(List<Map<String, Object>> rows) {
@@ -332,6 +344,7 @@ class ClickHouseFlowStoreTest {
                     prepareCount++;
                     yield proxy(PreparedStatement.class, this::statementInvocation);
                 }
+                case "createStatement" -> proxy(Statement.class, this::statementInvocation);
                 case "close" -> null;
                 case "isClosed" -> false;
                 default -> defaultValue(method.getReturnType());
@@ -345,6 +358,10 @@ class ClickHouseFlowStoreTest {
                 return null;
             }
             return switch (name) {
+                case "execute" -> {
+                    executedSql = (String) args[0];
+                    yield true;
+                }
                 case "executeQuery" -> resultSet();
                 case "executeBatch" -> batchResult;
                 case "addBatch", "close" -> null;
@@ -359,6 +376,10 @@ class ClickHouseFlowStoreTest {
 
         private String sql() {
             return sql;
+        }
+
+        private String executedSql() {
+            return executedSql;
         }
 
         private Map<Integer, Object> parameters() {

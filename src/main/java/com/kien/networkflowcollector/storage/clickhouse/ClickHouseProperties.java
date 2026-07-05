@@ -13,4 +13,5 @@ public class ClickHouseProperties {
     private String url = "jdbc:clickhouse://localhost:8123/default";
     private String user = "kien";
     private String password = "2606";
+    private boolean cleanOnStart;
 }

@@ -8,6 +8,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.kien.networkflowcollector.metrics.PipelineMetrics;
 import com.kien.networkflowcollector.spi.RawFlowRecord;
 import java.time.Instant;
 import java.util.Map;
@@ -77,6 +78,24 @@ class KafkaFlowPublisherTest {
 
         assertThat(result.toCompletableFuture().isDone()).isTrue();
         assertThat(result.toCompletableFuture().isCompletedExceptionally()).isFalse();
+    }
+
+    @Test
+    @DisplayName("Kafka ack records collected source type")
+    @SuppressWarnings("unchecked")
+    void publish_kafkaAck_recordsCollectedSourceType() throws Exception {
+        PipelineMetrics metrics = PipelineMetrics.unregistered();
+        KafkaFlowPublisher meteredPublisher = new KafkaFlowPublisher(producer, codec, TOPIC, 10, metrics);
+        when(codec.encode(any())).thenReturn("{}");
+        doAnswer(inv -> {
+            Callback cb = inv.getArgument(1);
+            cb.onCompletion(new RecordMetadata(new TopicPartition(TOPIC, 0), 0, 0, 0, 0, 0), null);
+            return null;
+        }).when(producer).send(any(ProducerRecord.class), any(Callback.class));
+
+        meteredPublisher.publish(sampleRecord()).toCompletableFuture().get();
+
+        assertThat(metrics.snapshot().collectedBySourceType()).containsEntry("netflow-v5", 1L);
     }
 
     @Test

@@ -33,14 +33,26 @@ public class KafkaFlowProperties {
         properties.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, producer.idempotence);
         properties.put(ProducerConfig.RETRIES_CONFIG, producer.retries);
         properties.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, producer.retryBackoffMs.toMillis());
-        properties.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, producer.deliveryTimeoutMs.toMillis());
-        properties.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, producer.requestTimeoutMs.toMillis());
+        properties.put(
+                ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG,
+                durationMillisAsInt(producer.deliveryTimeoutMs, ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG));
+        properties.put(
+                ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG,
+                durationMillisAsInt(producer.requestTimeoutMs, ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG));
         properties.put(ProducerConfig.LINGER_MS_CONFIG, producer.lingerMs.toMillis());
         properties.put(ProducerConfig.BATCH_SIZE_CONFIG, producer.batchSizeBytes);
         properties.put(
                 ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION,
                 producer.maxInFlightRequestsPerConnection);
         return properties;
+    }
+
+    private static int durationMillisAsInt(Duration duration, String propertyName) {
+        long millis = duration.toMillis();
+        if (millis > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(propertyName + " must be <= " + Integer.MAX_VALUE + " ms");
+        }
+        return Math.toIntExact(millis);
     }
 
     Properties consumerProperties() {

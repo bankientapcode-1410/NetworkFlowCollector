@@ -1,5 +1,6 @@
 package com.kien.networkflowcollector.kafka;
 
+import com.kien.networkflowcollector.metrics.PipelineMetrics;
 import com.kien.networkflowcollector.spi.FlowPublisher;
 import com.kien.networkflowcollector.spi.RawFlowRecord;
 import java.time.Duration;
@@ -17,13 +18,20 @@ public class KafkaFlowPublisher implements FlowPublisher, AutoCloseable {
     private final RawFlowRecordJsonCodec codec;
     private final String topic;
     private final Semaphore inFlightPermits;
+    private final PipelineMetrics metrics;
 
     public KafkaFlowPublisher(KafkaFlowProperties properties, RawFlowRecordJsonCodec codec) {
+        this(properties, codec, PipelineMetrics.unregistered());
+    }
+
+    public KafkaFlowPublisher(
+            KafkaFlowProperties properties, RawFlowRecordJsonCodec codec, PipelineMetrics metrics) {
         this(
                 new KafkaProducer<>(properties.producerProperties("raw-producer")),
                 codec,
                 properties.getRawTopic(),
-                properties.getProducer().getMaxInFlightPublishes());
+                properties.getProducer().getMaxInFlightPublishes(),
+                metrics);
     }
 
     KafkaFlowPublisher(
@@ -31,10 +39,20 @@ public class KafkaFlowPublisher implements FlowPublisher, AutoCloseable {
             RawFlowRecordJsonCodec codec,
             String topic,
             int maxInFlightPublishes) {
+        this(producer, codec, topic, maxInFlightPublishes, PipelineMetrics.unregistered());
+    }
+
+    KafkaFlowPublisher(
+            Producer<String, String> producer,
+            RawFlowRecordJsonCodec codec,
+            String topic,
+            int maxInFlightPublishes,
+            PipelineMetrics metrics) {
         this.producer = Objects.requireNonNull(producer, "producer");
         this.codec = Objects.requireNonNull(codec, "codec");
         this.topic = Objects.requireNonNull(topic, "topic");
         this.inFlightPermits = new Semaphore(Math.max(1, maxInFlightPublishes));
+        this.metrics = Objects.requireNonNull(metrics, "metrics");
     }
 
     @Override
@@ -55,6 +73,7 @@ public class KafkaFlowPublisher implements FlowPublisher, AutoCloseable {
                     (metadata, exception) -> {
                         inFlightPermits.release();
                         if (exception == null) {
+                            metrics.recordCollected(record.sourceType());
                             future.complete(null);
                         } else {
                             future.completeExceptionally(exception);
