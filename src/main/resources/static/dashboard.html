@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Network Flow Collector Dashboard</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --ink: #1d2733;
+      --muted: #647282;
+      --line: #d8dee6;
+      --collected: #2364aa;
+      --normalized: #0f8b8d;
+      --stored: #c47f17;
+      --danger: #c73535;
+      --ok: #228b5a;
+      --shadow: 0 10px 28px rgba(29, 39, 51, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 22px clamp(18px, 4vw, 48px);
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfd;
+    }
+
+    .eyebrow {
+      margin: 0 0 4px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 4vw, 36px);
+      font-weight: 800;
+      line-height: 1.1;
+    }
+
+    .sync {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      min-width: 210px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--muted);
+    }
+
+    .dot.live {
+      background: var(--ok);
+    }
+
+    .dot.error {
+      background: var(--danger);
+    }
+
+    .shell {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+      padding: 24px clamp(14px, 3vw, 32px) 40px;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .metric-card,
+    .chart-panel,
+    .flow-panel,
+    .collectors-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .metric-card {
+      min-height: 132px;
+      padding: 18px;
+      display: grid;
+      align-content: space-between;
+      gap: 12px;
+    }
+
+    .metric-label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .swatch {
+      width: 34px;
+      height: 5px;
+      border-radius: 999px;
+      flex: 0 0 auto;
+    }
+
+    .swatch.collected {
+      background: var(--collected);
+    }
+
+    .swatch.normalized {
+      background: var(--normalized);
+    }
+
+    .swatch.stored {
+      background: var(--stored);
+    }
+
+    .metric-value {
+      font-size: clamp(30px, 5vw, 48px);
+      line-height: 1;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-rate {
+      color: var(--muted);
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .chart-panel,
+    .flow-panel,
+    .collectors-panel {
+      padding: 18px;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.25;
+    }
+
+    .window {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .legend i {
+      width: 18px;
+      height: 3px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .chart-wrap {
+      width: 100%;
+      height: 300px;
+      position: relative;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 300px;
+    }
+
+    .side-stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .flow-list {
+      display: grid;
+      gap: 14px;
+    }
+
+    .flow-row {
+      display: grid;
+      gap: 7px;
+    }
+
+    .flow-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .bar {
+      height: 12px;
+      border-radius: 8px;
+      background: #edf1f5;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      min-width: 2px;
+      border-radius: inherit;
+      transition: width 220ms ease;
+    }
+
+    .bar-fill.collected {
+      background: var(--collected);
+    }
+
+    .bar-fill.normalized {
+      background: var(--normalized);
+    }
+
+    .bar-fill.stored {
+      background: var(--stored);
+    }
+
+    .collectors-panel {
+      margin-top: 18px;
+      overflow: hidden;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 700px;
+      font-size: 14px;
+    }
+
+    th,
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .status-text {
+      display: inline-flex;
+      align-items: center;
+      min-height: 26px;
+      padding: 0 8px;
+      border-radius: 8px;
+      background: #edf1f5;
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .status-text.up {
+      background: #e4f4ed;
+      color: #12603d;
+    }
+
+    .status-text.degraded,
+    .status-text.starting {
+      background: #fff1d6;
+      color: #855400;
+    }
+
+    .status-text.down {
+      background: #fde4e4;
+      color: #8a1f1f;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .message {
+      max-width: 640px;
+      color: #344253;
+    }
+
+    .source-list {
+      display: grid;
+      gap: 4px;
+    }
+
+    @media (max-width: 920px) {
+      .metrics-grid,
+      .charts-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      .sync {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .metric-card,
+      .chart-panel,
+      .flow-panel,
+      .collectors-panel {
+        padding: 14px;
+      }
+
+      .metric-card {
+        min-height: 114px;
+      }
+
+      .chart-wrap,
+      canvas {
+        height: 280px;
+      }
+
+      table {
+        min-width: 620px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Live Pipeline</p>
+      <h1>Network Flow Collector</h1>
+    </div>
+    <div class="sync">
+      <span class="status-pill"><span id="statusDot" class="dot"></span><span id="statusText">Connecting</span></span>
+      <span id="updatedAt">Last update --</span>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="metrics-grid" aria-label="Pipeline totals">
+      <article class="metric-card">
+        <div class="metric-label"><span>Collected Logs</span><span class="swatch collected"></span></div>
+        <div id="collectedTotal" class="metric-value">0</div>
+        <div id="collectedRate" class="metric-rate">0/s</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label"><span>Normalized Logs</span><span class="swatch normalized"></span></div>
+        <div id="normalizedTotal" class="metric-value">0</div>
+        <div id="normalizedRate" class="metric-rate">0/s</div>
+      </article>
+      <article class="metric-card">
+        <div class="metric-label"><span>Database Writes</span><span class="swatch stored"></span></div>
+        <div id="storedTotal" class="metric-value">0</div>
+        <div id="storedRate" class="metric-rate">0/s</div>
+      </article>
+    </section>
+
+    <section class="charts-grid" aria-label="Pipeline graphs">
+      <section class="chart-panel" aria-label="Collected logs over five minutes">
+        <div class="panel-head">
+          <h2>Collected Logs</h2>
+          <span id="collectedWindowLabel" class="window">5 min</span>
+        </div>
+        <div id="collectedLegend" class="legend"></div>
+        <div class="chart-wrap">
+          <canvas id="collectedChart"></canvas>
+        </div>
+      </section>
+
+      <section class="chart-panel" aria-label="Normalized logs over five minutes">
+        <div class="panel-head">
+          <h2>Normalized Logs</h2>
+          <span id="normalizedWindowLabel" class="window">5 min</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="normalizedChart"></canvas>
+        </div>
+      </section>
+
+      <section class="chart-panel" aria-label="Database writes over five minutes">
+        <div class="panel-head">
+          <h2>Database Writes</h2>
+          <span id="storedWindowLabel" class="window">5 min</span>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="storedChart"></canvas>
+        </div>
+      </section>
+    </section>
+
+    <section class="collectors-panel" aria-label="Collector health">
+      <div class="panel-head">
+        <h2>Collectors</h2>
+        <span id="collectorCount" class="window">0 active</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Sources</th>
+              <th>Last Record</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody id="collectorRows">
+            <tr><td colspan="5" class="muted">No collector data yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const els = {
+      statusDot: document.getElementById("statusDot"),
+      statusText: document.getElementById("statusText"),
+      updatedAt: document.getElementById("updatedAt"),
+      collectedTotal: document.getElementById("collectedTotal"),
+      normalizedTotal: document.getElementById("normalizedTotal"),
+      storedTotal: document.getElementById("storedTotal"),
+      collectedRate: document.getElementById("collectedRate"),
+      normalizedRate: document.getElementById("normalizedRate"),
+      storedRate: document.getElementById("storedRate"),
+      collectedWindowLabel: document.getElementById("collectedWindowLabel"),
+      collectedLegend: document.getElementById("collectedLegend"),
+      normalizedWindowLabel: document.getElementById("normalizedWindowLabel"),
+      storedWindowLabel: document.getElementById("storedWindowLabel"),
+      collectedChart: document.getElementById("collectedChart"),
+      normalizedChart: document.getElementById("normalizedChart"),
+      storedChart: document.getElementById("storedChart"),
+      collectorRows: document.getElementById("collectorRows"),
+      collectorCount: document.getElementById("collectorCount")
+    };
+
+    const REFRESH_INTERVAL_MS = 15000;
+
+    let lastPayload = null;
+
+    const colors = {
+      collected: "#2364aa",
+      normalized: "#0f8b8d",
+      databaseWritten: "#c47f17",
+      grid: "#d8dee6",
+      text: "#647282",
+      ink: "#1d2733"
+    };
+    const sourcePalette = ["#2364aa", "#c47f17", "#0f8b8d", "#7a4fb0", "#7c6a0a", "#c73535"];
+    const sourceColorOverrides = {
+      "netflow-v5": "#2364aa",
+      "netflow-v9": "#c47f17"
+    };
+
+    function formatNumber(value) {
+      return new Intl.NumberFormat().format(value || 0);
+    }
+
+    function formatRate(value) {
+      const rate = Number(value || 0);
+      const digits = rate >= 10 ? 1 : 2;
+      return `${rate.toFixed(digits)}/s`;
+    }
+
+    function formatTime(value) {
+      if (!value) {
+        return "--";
+      }
+      return new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      }).format(new Date(value));
+    }
+
+    function setStatus(ok, text) {
+      els.statusDot.classList.toggle("live", ok);
+      els.statusDot.classList.toggle("error", !ok);
+      els.statusText.textContent = text;
+    }
+
+    async function loadMetrics() {
+      try {
+        const response = await fetch("/api/dashboard/metrics", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        lastPayload = payload;
+        render(payload);
+        setStatus(true, "Live");
+      } catch (error) {
+        setStatus(false, "Offline");
+        els.updatedAt.textContent = `Last error ${error.message}`;
+      }
+    }
+
+    function render(payload) {
+      const totals = payload.totals || {};
+      const rates = payload.ratesPerSecond || {};
+      const windowText = `${Math.round((payload.windowSeconds || 300) / 60)} min`;
+
+      els.updatedAt.textContent = `Last update ${formatTime(payload.generatedAt)}`;
+      els.collectedWindowLabel.textContent = windowText;
+      els.normalizedWindowLabel.textContent = windowText;
+      els.storedWindowLabel.textContent = windowText;
+
+      els.collectedTotal.textContent = formatNumber(totals.collected);
+      els.normalizedTotal.textContent = formatNumber(totals.normalized);
+      els.storedTotal.textContent = formatNumber(totals.databaseWritten);
+      els.collectedRate.textContent = formatRate(rates.collected);
+      els.normalizedRate.textContent = formatRate(rates.normalized);
+      els.storedRate.textContent = formatRate(rates.databaseWritten);
+
+      renderCollectors(payload.collectors || []);
+      drawCharts(payload);
+    }
+
+    function renderCollectors(collectors) {
+      const active = collectors.filter(item => ["UP", "STARTING", "DEGRADED"].includes(item.status)).length;
+      els.collectorCount.textContent = `${active} active`;
+      if (collectors.length === 0) {
+        els.collectorRows.innerHTML = '<tr><td colspan="5" class="muted">No collector data yet</td></tr>';
+        return;
+      }
+
+      els.collectorRows.innerHTML = collectors.map(collector => {
+        const statusClass = (collector.status || "").toLowerCase();
+        const sources = (collector.sourceTypes || [])
+          .map(sourceType => `<span>${escapeHtml(sourceType)}</span>`)
+          .join("");
+        return `
+          <tr>
+            <td><strong>${escapeHtml(collector.type || "--")}</strong></td>
+            <td><span class="status-text ${escapeHtml(statusClass)}">${escapeHtml(collector.status || "--")}</span></td>
+            <td class="muted">${sources ? `<div class="source-list">${sources}</div>` : "--"}</td>
+            <td class="muted">${escapeHtml(formatTime(collector.lastRecordAt))}</td>
+            <td class="message">${escapeHtml(collector.message || "--")}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function drawCharts(payload) {
+      const series = payload.series || [];
+      drawCollectedSeriesChart(payload);
+      drawTimeSeriesChart(els.normalizedChart, series, "normalized", colors.normalized, "Waiting for normalized logs");
+      drawTimeSeriesChart(els.storedChart, series, "databaseWritten", colors.databaseWritten, "Waiting for database writes");
+    }
+
+    function setupCanvas(canvas) {
+      const wrap = canvas.parentElement;
+      const rect = wrap.getBoundingClientRect();
+      const width = Math.max(280, rect.width);
+      const height = Math.max(240, rect.height);
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+      return { ctx, width, height };
+    }
+
+    function drawCollectedSeriesChart(payload) {
+      const series = payload.series || [];
+      const sourceTypes = collectedSourceTypes(payload);
+      const lineDefs = sourceTypes.length > 0
+        ? sourceTypes.map((sourceType, index) => ({
+            label: displaySourceType(sourceType),
+            color: sourceColor(sourceType, index),
+            value: point => Number((point.collectedBySourceType || {})[sourceType] || 0)
+          }))
+        : [{
+            label: "Collected",
+            color: colors.collected,
+            value: point => Number(point.collected || 0)
+          }];
+
+      renderLegend(els.collectedLegend, lineDefs);
+      drawMultiTimeSeriesChart(els.collectedChart, series, lineDefs, "Waiting for collected logs");
+    }
+
+    function collectedSourceTypes(payload) {
+      const totals = new Map();
+      (payload.collectedByType || []).forEach(item => {
+        const sourceType = item.sourceType || "unknown";
+        const count = Number(item.count || 0);
+        if (count > 0) {
+          totals.set(sourceType, count);
+        }
+      });
+
+      (payload.series || []).forEach(point => {
+        Object.entries(point.collectedBySourceType || {}).forEach(([sourceType, count]) => {
+          if (Number(count || 0) > 0 && !totals.has(sourceType)) {
+            totals.set(sourceType, 0);
+          }
+        });
+      });
+
+      return Array.from(totals.keys())
+        .sort((left, right) => (totals.get(right) - totals.get(left)) || left.localeCompare(right));
+    }
+
+    function renderLegend(target, lineDefs) {
+      target.innerHTML = lineDefs.map(line => `
+        <span><i style="background:${line.color}"></i>${escapeHtml(line.label)}</span>
+      `).join("");
+    }
+
+    function sourceColor(sourceType, index) {
+      return sourceColorOverrides[sourceType] || sourcePalette[index % sourcePalette.length];
+    }
+
+    function displaySourceType(sourceType) {
+      const labels = {
+        "netflow-v5": "NetFlow v5",
+        "netflow-v9": "NetFlow v9",
+        "suricata-flow": "Suricata flow",
+        "zeek-conn": "Zeek conn"
+      };
+      return labels[sourceType] || sourceType;
+    }
+
+    function drawTimeSeriesChart(canvas, series, key, color, emptyText) {
+      drawMultiTimeSeriesChart(canvas, series, [{
+        color,
+        fill: true,
+        value: point => Number(point[key] || 0)
+      }], emptyText);
+    }
+
+    function drawMultiTimeSeriesChart(canvas, series, lineDefs, emptyText) {
+      const { ctx, width, height } = setupCanvas(canvas);
+      const pad = { top: 18, right: 18, bottom: 34, left: 48 };
+      const plotWidth = width - pad.left - pad.right;
+      const plotHeight = height - pad.top - pad.bottom;
+      const maxValue = Math.max(
+        1,
+        ...series.flatMap(point => lineDefs.map(line => Number(line.value(point) || 0)))
+      );
+      const hasEvents = series.some(point => lineDefs.some(line => Number(line.value(point) || 0) > 0));
+
+      drawHorizontalGrid(ctx, pad, plotWidth, plotHeight, maxValue);
+      lineDefs.forEach(line => {
+        drawLine(ctx, series, line.value, line.color, pad, plotWidth, plotHeight, maxValue, line.fill === true);
+      });
+      drawXAxis(ctx, series, pad, plotWidth, plotHeight);
+
+      if (!hasEvents) {
+        drawEmpty(ctx, width, height, emptyText);
+      }
+    }
+
+    function drawHorizontalGrid(ctx, pad, plotWidth, plotHeight, maxValue) {
+      ctx.strokeStyle = colors.grid;
+      ctx.lineWidth = 1;
+      ctx.fillStyle = colors.text;
+      ctx.font = "12px Inter, system-ui, sans-serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+
+      for (let i = 0; i <= 4; i++) {
+        const ratio = i / 4;
+        const y = pad.top + plotHeight - ratio * plotHeight;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, y);
+        ctx.lineTo(pad.left + plotWidth, y);
+        ctx.stroke();
+        ctx.fillText(formatCompact(maxValue * ratio), pad.left - 8, y);
+      }
+    }
+
+    function drawLine(ctx, series, valueForPoint, color, pad, plotWidth, plotHeight, maxValue, fillArea) {
+      if (series.length === 0) {
+        return;
+      }
+
+      const points = series.map((point, index) => {
+        const x = pad.left + (series.length === 1 ? 0 : (index / (series.length - 1)) * plotWidth);
+        const y = pad.top + plotHeight - (Number(valueForPoint(point) || 0) / maxValue) * plotHeight;
+        return { x, y };
+      });
+
+      if (fillArea) {
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.12;
+        ctx.beginPath();
+        points.forEach((point, index) => {
+          if (index === 0) {
+            ctx.moveTo(point.x, pad.top + plotHeight);
+            ctx.lineTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
+          }
+        });
+        ctx.lineTo(points[points.length - 1].x, pad.top + plotHeight);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        if (index === 0) {
+          ctx.moveTo(point.x, point.y);
+        } else {
+          ctx.lineTo(point.x, point.y);
+        }
+      });
+      ctx.stroke();
+    }
+
+    function drawXAxis(ctx, series, pad, plotWidth, plotHeight) {
+      if (series.length === 0) {
+        return;
+      }
+      const labels = [0, Math.floor(series.length / 2), series.length - 1];
+      ctx.fillStyle = colors.text;
+      ctx.font = "12px Inter, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+
+      labels.forEach(index => {
+        const point = series[index];
+        const x = pad.left + (index / Math.max(1, series.length - 1)) * plotWidth;
+        const y = pad.top + plotHeight + 12;
+        ctx.fillText(formatTime(point.timestamp), x, y);
+      });
+    }
+
+    function drawEmpty(ctx, width, height, text) {
+      ctx.fillStyle = colors.text;
+      ctx.font = "600 14px Inter, system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, width / 2, height / 2);
+    }
+
+    function formatCompact(value) {
+      return new Intl.NumberFormat(undefined, {
+        notation: "compact",
+        maximumFractionDigits: 1
+      }).format(Math.round(value));
+    }
+
+    window.addEventListener("resize", () => {
+      if (lastPayload) {
+        drawCharts(lastPayload);
+      }
+    });
+
+    loadMetrics();
+    window.setInterval(loadMetrics, REFRESH_INTERVAL_MS);
+  </script>
+</body>
+</html>
