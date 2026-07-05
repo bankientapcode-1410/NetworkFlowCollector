@@ -3,6 +3,7 @@
     "netflow-v5",
     "netflow-v9",
     "zeek-conn",
-    "suricata-flow"
+    "suricata-flow",
+    "rest"
   ]
 }

@@ -92,20 +92,41 @@ public class DashboardApiController {
                 .toList();
     }
 
-    private PipelineRates rates(List<PipelineMetricsPoint> points) {
+    static PipelineRates rates(List<PipelineMetricsPoint> points) {
         int from = Math.max(0, points.size() - RATE_WINDOW_SECONDS);
+        List<PipelineMetricsPoint> recent = points.subList(from, points.size());
         long collected = 0;
         long normalized = 0;
         long stored = 0;
-        for (PipelineMetricsPoint point : points.subList(from, points.size())) {
+        int firstActiveIndex = -1;
+        for (int i = 0; i < recent.size(); i++) {
+            PipelineMetricsPoint point = recent.get(i);
             collected += point.collected();
             normalized += point.normalized();
             stored += point.stored();
+            if (firstActiveIndex < 0 && isActive(point)) {
+                firstActiveIndex = i;
+            }
         }
+        double elapsedSeconds = elapsedSeconds(recent, firstActiveIndex);
         return new PipelineRates(
-                collected / (double) RATE_WINDOW_SECONDS,
-                normalized / (double) RATE_WINDOW_SECONDS,
-                stored / (double) RATE_WINDOW_SECONDS);
+                collected / elapsedSeconds,
+                normalized / elapsedSeconds,
+                stored / elapsedSeconds);
+    }
+
+    private static boolean isActive(PipelineMetricsPoint point) {
+        return point.collected() > 0 || point.normalized() > 0 || point.stored() > 0;
+    }
+
+    private static double elapsedSeconds(List<PipelineMetricsPoint> points, int firstActiveIndex) {
+        if (points.isEmpty() || firstActiveIndex < 0) {
+            return RATE_WINDOW_SECONDS;
+        }
+        PipelineMetricsPoint firstActive = points.get(firstActiveIndex);
+        PipelineMetricsPoint newest = points.getLast();
+        long seconds = newest.timestamp().getEpochSecond() - firstActive.timestamp().getEpochSecond() + 1;
+        return Math.max(1, Math.min(RATE_WINDOW_SECONDS, seconds));
     }
 
     private List<CollectorResponse> collectors() {

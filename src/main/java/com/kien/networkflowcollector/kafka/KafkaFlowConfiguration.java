@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.kien.networkflowcollector.metrics.PipelineMetrics;
 import com.kien.networkflowcollector.normalization.FlowNormalizationService;
 import com.kien.networkflowcollector.storage.FlowStore;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -34,8 +33,12 @@ public class KafkaFlowConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean({KafkaDeadLetterPublisher.class, FlowStore.class})
     @ConditionalOnProperty(prefix = "nfc.kafka", name = "enabled", havingValue = "true")
+    @ConditionalOnProperty(
+            prefix = "nfc.kafka.consumer",
+            name = "enabled",
+            havingValue = "true",
+            matchIfMissing = true)
     KafkaFlowConsumer kafkaFlowConsumer(
             KafkaFlowProperties properties,
             RawFlowRecordJsonCodec codec,

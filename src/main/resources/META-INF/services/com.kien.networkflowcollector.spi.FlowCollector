@@ -1,3 +1,4 @@
 com.kien.networkflowcollector.plugins.netflow.NetFlowCollector
 com.kien.networkflowcollector.plugins.zeek.ZeekCollector
 com.kien.networkflowcollector.plugins.suricata.SuricataCollector
+com.kien.networkflowcollector.plugins.rest.RestFlowCollector

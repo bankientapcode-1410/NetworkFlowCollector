@@ -2,3 +2,4 @@ com.kien.networkflowcollector.plugins.netflow.v5.NetFlowV5Normalizer
 com.kien.networkflowcollector.plugins.netflow.v9.NetFlowV9Normalizer
 com.kien.networkflowcollector.plugins.zeek.ZeekConnNormalizer
 com.kien.networkflowcollector.plugins.suricata.SuricataFlowNormalizer
+com.kien.networkflowcollector.plugins.rest.RestFlowNormalizer
