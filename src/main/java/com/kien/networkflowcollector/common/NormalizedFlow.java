@@ -27,4 +27,39 @@ public record NormalizedFlow(
         String dstCountryCode,
         Long dstAsn,
         String dstAsOrg,
-        Instant ingestTime) {}
+        Instant ingestTime) {
+
+    public NormalizedFlow withEnrichment(
+            String srcCountryCode,
+            Long srcAsn,
+            String srcAsOrg,
+            String dstCountryCode,
+            Long dstAsn,
+            String dstAsOrg) {
+        return new NormalizedFlow(
+                flowId,
+                tsStart,
+                tsEnd,
+                durationMs,
+                srcIp,
+                srcPort,
+                dstIp,
+                dstPort,
+                protocol,
+                bytesTotal,
+                packetsTotal,
+                tcpFlags,
+                sampled,
+                samplingRate,
+                samplePool,
+                sourceType,
+                exporterIp,
+                srcCountryCode,
+                srcAsn,
+                srcAsOrg,
+                dstCountryCode,
+                dstAsn,
+                dstAsOrg,
+                ingestTime);
+    }
+}

@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class DashboardApiController {
 
     private static final int RATE_WINDOW_SECONDS = 60;
-    private static final int SERIES_BUCKET_SECONDS = 15;
+    private static final int SERIES_BUCKET_SECONDS = 5;
 
     private final PipelineMetrics metrics;
     private final ObjectProvider<CollectorRegistry> collectorRegistryProvider;

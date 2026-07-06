@@ -72,7 +72,7 @@ class TrafficGeneratorSmokeTest {
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 receiver.receive(packet);
 
-                assertThat(packet.getLength()).isEqualTo(104);
+                assertThat(packet.getLength()).isEqualTo(128);
                 assertThat(ByteBuffer.wrap(packet.getData(), 0, packet.getLength())
                                 .order(ByteOrder.BIG_ENDIAN)
                                 .getShort())

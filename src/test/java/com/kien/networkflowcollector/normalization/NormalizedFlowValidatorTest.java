@@ -284,6 +284,32 @@ class NormalizedFlowValidatorTest {
     }
 
     @Test
+    @DisplayName("Invalid country code -> FlowValidationException(invalid_enrichment)")
+    void validate_invalidCountryCode_throwsException() {
+        NormalizedFlow flow = validFlow().withEnrichment("usa", null, null, null, null, null);
+
+        assertThatThrownBy(() -> validator.validate(flow))
+                .isInstanceOf(FlowValidationException.class)
+                .satisfies(ex -> {
+                    FlowValidationException fve = (FlowValidationException) ex;
+                    org.assertj.core.api.Assertions.assertThat(fve.reason()).isEqualTo("invalid_enrichment");
+                });
+    }
+
+    @Test
+    @DisplayName("ASN out of range -> FlowValidationException(invalid_enrichment)")
+    void validate_asnOutOfRange_throwsException() {
+        NormalizedFlow flow = validFlow().withEnrichment(null, 4_294_967_296L, null, null, null, null);
+
+        assertThatThrownBy(() -> validator.validate(flow))
+                .isInstanceOf(FlowValidationException.class)
+                .satisfies(ex -> {
+                    FlowValidationException fve = (FlowValidationException) ex;
+                    org.assertj.core.api.Assertions.assertThat(fve.reason()).isEqualTo("invalid_enrichment");
+                });
+    }
+
+    @Test
     @DisplayName("IPv6 addresses → accepted without exception")
     void validate_ipv6Addresses_accepted() {
         NormalizedFlow flow = new NormalizedFlow(

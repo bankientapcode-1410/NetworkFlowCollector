@@ -50,10 +50,10 @@ public final class NetFlowNormalizerSupport {
                 raw.sourceType(),
                 raw.exporterIp(),
                 null,
+                nullablePositiveLongField(fields, "src_as"),
                 null,
                 null,
-                null,
-                null,
+                nullablePositiveLongField(fields, "dst_as"),
                 null,
                 raw.receivedAt());
     }
@@ -110,10 +110,10 @@ public final class NetFlowNormalizerSupport {
                 raw.sourceType(),
                 raw.exporterIp(),
                 null,
-                nullableLongField(fields, "src_as"),
+                nullablePositiveLongField(fields, "src_as"),
                 null,
                 null,
-                nullableLongField(fields, "dst_as"),
+                nullablePositiveLongField(fields, "dst_as"),
                 null,
                 raw.receivedAt());
     }
@@ -277,6 +277,11 @@ public final class NetFlowNormalizerSupport {
             return number.longValue();
         }
         return Long.parseLong(value.toString());
+    }
+
+    private static Long nullablePositiveLongField(Map<String, Object> fields, String key) {
+        Long value = nullableLongField(fields, key);
+        return value == null || value <= 0 ? null : value;
     }
 
     private static Instant instantFieldOrDefault(Map<String, Object> fields, String key, Instant defaultValue) {

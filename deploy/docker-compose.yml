@@ -23,6 +23,8 @@ services:
       NFC_SURICATA_ENABLED: ${NFC_SURICATA_ENABLED:-true}
       NFC_SURICATA_PATHS: ${NFC_SURICATA_PATHS:-/var/log/suricata/eve.json}
       NFC_SURICATA_START_AT_END: ${NFC_SURICATA_START_AT_END:-true}
+      NFC_REST_ENABLED: ${NFC_REST_ENABLED:-true}
+      NFC_REST_MAX_BATCH_SIZE: ${NFC_REST_MAX_BATCH_SIZE:-5000}
     ports:
       - "8080:8080"
       - "2055:2055/udp"

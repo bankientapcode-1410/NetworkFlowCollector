@@ -101,16 +101,20 @@
       padding: 24px clamp(14px, 3vw, 32px) 40px;
     }
 
-    .metrics-grid {
+    .pipeline-stack {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 14px;
-      margin-bottom: 18px;
+      gap: 18px;
+    }
+
+    .pipeline-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+      gap: 18px;
+      align-items: stretch;
     }
 
     .metric-card,
     .chart-panel,
-    .flow-panel,
     .collectors-panel {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -119,11 +123,11 @@
     }
 
     .metric-card {
-      min-height: 132px;
+      min-height: 180px;
       padding: 18px;
       display: grid;
       align-content: space-between;
-      gap: 12px;
+      gap: 16px;
     }
 
     .metric-label {
@@ -157,29 +161,32 @@
     }
 
     .metric-value {
-      font-size: clamp(30px, 5vw, 48px);
+      font-size: clamp(34px, 5vw, 52px);
       line-height: 1;
       font-weight: 800;
       font-variant-numeric: tabular-nums;
     }
 
-    .metric-rate {
+    .metric-unit {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .metric-total {
       color: var(--muted);
       font-size: 14px;
       font-variant-numeric: tabular-nums;
     }
 
-    .charts-grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
-      align-items: start;
-    }
-
     .chart-panel,
-    .flow-panel,
     .collectors-panel {
       padding: 18px;
+    }
+
+    .chart-panel {
+      min-width: 0;
     }
 
     .panel-head {
@@ -203,88 +210,69 @@
       white-space: nowrap;
     }
 
-    .legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px 16px;
-      margin: 0 0 10px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .legend span {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-    }
-
-    .legend i {
-      width: 18px;
-      height: 3px;
-      border-radius: 999px;
-      display: inline-block;
-    }
-
     .chart-wrap {
       width: 100%;
-      height: 300px;
+      height: 260px;
       position: relative;
     }
 
     canvas {
       display: block;
       width: 100%;
-      height: 300px;
+      height: 100%;
     }
 
-    .side-stack {
-      display: grid;
+    .chart-tooltip {
+      position: absolute;
+      z-index: 5;
+      min-width: 210px;
+      max-width: min(320px, calc(100vw - 40px));
+      padding: 10px 12px;
+      border: 1px solid #cbd3dc;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.98);
+      box-shadow: 0 12px 24px rgba(29, 39, 51, 0.16);
+      color: var(--ink);
+      font-size: 13px;
+      pointer-events: none;
+      transform: translate(-50%, calc(-100% - 12px));
+    }
+
+    .chart-tooltip.hidden {
+      display: none;
+    }
+
+    .tooltip-title {
+      margin-bottom: 8px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .tooltip-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
       gap: 18px;
+      min-height: 22px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
     }
 
-    .flow-list {
-      display: grid;
-      gap: 14px;
+    .tooltip-row strong {
+      color: var(--ink);
     }
 
-    .flow-row {
-      display: grid;
+    .tooltip-label {
+      display: inline-flex;
+      align-items: center;
       gap: 7px;
     }
 
-    .flow-meta {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      color: var(--muted);
-      font-size: 13px;
-      font-weight: 700;
-    }
-
-    .bar {
-      height: 12px;
-      border-radius: 8px;
-      background: #edf1f5;
-      overflow: hidden;
-    }
-
-    .bar-fill {
-      height: 100%;
-      min-width: 2px;
-      border-radius: inherit;
-      transition: width 220ms ease;
-    }
-
-    .bar-fill.collected {
+    .tooltip-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
       background: var(--collected);
-    }
-
-    .bar-fill.normalized {
-      background: var(--normalized);
-    }
-
-    .bar-fill.stored {
-      background: var(--stored);
     }
 
     .collectors-panel {
@@ -364,9 +352,12 @@
     }
 
     @media (max-width: 920px) {
-      .metrics-grid,
-      .charts-grid {
+      .pipeline-row {
         grid-template-columns: 1fr;
+      }
+
+      .metric-card {
+        min-height: 132px;
       }
 
       .topbar {
@@ -382,18 +373,13 @@
     @media (max-width: 560px) {
       .metric-card,
       .chart-panel,
-      .flow-panel,
       .collectors-panel {
         padding: 14px;
       }
 
-      .metric-card {
-        min-height: 114px;
-      }
-
       .chart-wrap,
       canvas {
-        height: 280px;
+        height: 250px;
       }
 
       table {
@@ -415,54 +401,68 @@
   </header>
 
   <main class="shell">
-    <section class="metrics-grid" aria-label="Pipeline totals">
-      <article class="metric-card">
-        <div class="metric-label"><span>Collected Logs</span><span class="swatch collected"></span></div>
-        <div id="collectedTotal" class="metric-value">0</div>
-        <div id="collectedRate" class="metric-rate">0/s</div>
-      </article>
-      <article class="metric-card">
-        <div class="metric-label"><span>Normalized Logs</span><span class="swatch normalized"></span></div>
-        <div id="normalizedTotal" class="metric-value">0</div>
-        <div id="normalizedRate" class="metric-rate">0/s</div>
-      </article>
-      <article class="metric-card">
-        <div class="metric-label"><span>Database Writes</span><span class="swatch stored"></span></div>
-        <div id="storedTotal" class="metric-value">0</div>
-        <div id="storedRate" class="metric-rate">0/s</div>
-      </article>
-    </section>
+    <section class="pipeline-stack" aria-label="Pipeline throughput">
+      <section class="pipeline-row" aria-label="Collected logs throughput">
+        <article class="metric-card">
+          <div class="metric-label"><span>Overall Collected</span><span class="swatch collected"></span></div>
+          <div>
+            <div id="collectedRate" class="metric-value">0/s</div>
+            <div class="metric-unit">logs/second</div>
+          </div>
+          <div id="collectedTotal" class="metric-total">0 total collected</div>
+        </article>
 
-    <section class="charts-grid" aria-label="Pipeline graphs">
-      <section class="chart-panel" aria-label="Collected logs over five minutes">
-        <div class="panel-head">
-          <h2>Collected Logs</h2>
-          <span id="collectedWindowLabel" class="window">5 min</span>
-        </div>
-        <div id="collectedLegend" class="legend"></div>
-        <div class="chart-wrap">
-          <canvas id="collectedChart"></canvas>
-        </div>
+        <section class="chart-panel" aria-label="Collected logs updated every five seconds">
+          <div class="panel-head">
+            <h2>Collected Logs</h2>
+            <span id="collectedWindowLabel" class="window">5 min / 5s update</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="collectedChart"></canvas>
+          </div>
+        </section>
       </section>
 
-      <section class="chart-panel" aria-label="Normalized logs over five minutes">
-        <div class="panel-head">
-          <h2>Normalized Logs</h2>
-          <span id="normalizedWindowLabel" class="window">5 min</span>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="normalizedChart"></canvas>
-        </div>
+      <section class="pipeline-row" aria-label="Normalized logs throughput">
+        <article class="metric-card">
+          <div class="metric-label"><span>Overall Normalized</span><span class="swatch normalized"></span></div>
+          <div>
+            <div id="normalizedRate" class="metric-value">0/s</div>
+            <div class="metric-unit">logs/second</div>
+          </div>
+          <div id="normalizedTotal" class="metric-total">0 total normalized</div>
+        </article>
+
+        <section class="chart-panel" aria-label="Normalized logs updated every five seconds">
+          <div class="panel-head">
+            <h2>Normalized Logs</h2>
+            <span id="normalizedWindowLabel" class="window">5 min / 5s update</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="normalizedChart"></canvas>
+          </div>
+        </section>
       </section>
 
-      <section class="chart-panel" aria-label="Database writes over five minutes">
-        <div class="panel-head">
-          <h2>Database Writes</h2>
-          <span id="storedWindowLabel" class="window">5 min</span>
-        </div>
-        <div class="chart-wrap">
-          <canvas id="storedChart"></canvas>
-        </div>
+      <section class="pipeline-row" aria-label="Database writer throughput">
+        <article class="metric-card">
+          <div class="metric-label"><span>Database Writer</span><span class="swatch stored"></span></div>
+          <div>
+            <div id="storedRate" class="metric-value">0/s</div>
+            <div class="metric-unit">logs/second</div>
+          </div>
+          <div id="storedTotal" class="metric-total">0 total database writes</div>
+        </article>
+
+        <section class="chart-panel" aria-label="Database writer logs updated every five seconds">
+          <div class="panel-head">
+            <h2>Database Writer</h2>
+            <span id="storedWindowLabel" class="window">5 min / 5s update</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="storedChart"></canvas>
+          </div>
+        </section>
       </section>
     </section>
 
@@ -502,7 +502,6 @@
       normalizedRate: document.getElementById("normalizedRate"),
       storedRate: document.getElementById("storedRate"),
       collectedWindowLabel: document.getElementById("collectedWindowLabel"),
-      collectedLegend: document.getElementById("collectedLegend"),
       normalizedWindowLabel: document.getElementById("normalizedWindowLabel"),
       storedWindowLabel: document.getElementById("storedWindowLabel"),
       collectedChart: document.getElementById("collectedChart"),
@@ -512,7 +511,8 @@
       collectorCount: document.getElementById("collectorCount")
     };
 
-    const REFRESH_INTERVAL_MS = 15000;
+    const REFRESH_INTERVAL_MS = 5000;
+    const SOURCE_TYPES = ["netflow-v5", "netflow-v9", "zeek-conn", "suricata-flow", "rest"];
 
     let lastPayload = null;
 
@@ -524,11 +524,14 @@
       text: "#647282",
       ink: "#1d2733"
     };
-    const sourcePalette = ["#2364aa", "#c47f17", "#0f8b8d", "#7a4fb0", "#7c6a0a", "#c73535"];
     const sourceColorOverrides = {
       "netflow-v5": "#2364aa",
-      "netflow-v9": "#c47f17"
+      "netflow-v9": "#c47f17",
+      "zeek-conn": "#0f8b8d",
+      "suricata-flow": "#c73535",
+      "rest": "#7a4fb0"
     };
+    const chartStates = new Map();
 
     function formatNumber(value) {
       return new Intl.NumberFormat().format(value || 0);
@@ -576,19 +579,19 @@
     function render(payload) {
       const totals = payload.totals || {};
       const rates = payload.ratesPerSecond || {};
-      const windowText = `${Math.round((payload.windowSeconds || 300) / 60)} min`;
+      const windowText = `${Math.round((payload.windowSeconds || 300) / 60)} min / ${payload.seriesBucketSeconds || 5}s update`;
 
       els.updatedAt.textContent = `Last update ${formatTime(payload.generatedAt)}`;
       els.collectedWindowLabel.textContent = windowText;
       els.normalizedWindowLabel.textContent = windowText;
       els.storedWindowLabel.textContent = windowText;
 
-      els.collectedTotal.textContent = formatNumber(totals.collected);
-      els.normalizedTotal.textContent = formatNumber(totals.normalized);
-      els.storedTotal.textContent = formatNumber(totals.databaseWritten);
       els.collectedRate.textContent = formatRate(rates.collected);
       els.normalizedRate.textContent = formatRate(rates.normalized);
       els.storedRate.textContent = formatRate(rates.databaseWritten);
+      els.collectedTotal.textContent = `${formatNumber(totals.collected)} total collected`;
+      els.normalizedTotal.textContent = `${formatNumber(totals.normalized)} total normalized`;
+      els.storedTotal.textContent = `${formatNumber(totals.databaseWritten)} total database writes`;
 
       renderCollectors(payload.collectors || []);
       drawCharts(payload);
@@ -605,7 +608,7 @@
       els.collectorRows.innerHTML = collectors.map(collector => {
         const statusClass = (collector.status || "").toLowerCase();
         const sources = (collector.sourceTypes || [])
-          .map(sourceType => `<span>${escapeHtml(sourceType)}</span>`)
+          .map(sourceType => `<span>${escapeHtml(displaySourceType(sourceType))}</span>`)
           .join("");
         return `
           <tr>
@@ -630,16 +633,37 @@
 
     function drawCharts(payload) {
       const series = payload.series || [];
-      drawCollectedSeriesChart(payload);
-      drawTimeSeriesChart(els.normalizedChart, series, "normalized", colors.normalized, "Waiting for normalized logs");
-      drawTimeSeriesChart(els.storedChart, series, "databaseWritten", colors.databaseWritten, "Waiting for database writes");
+      drawTimeSeriesChart({
+        canvas: els.collectedChart,
+        series,
+        key: "collected",
+        color: colors.collected,
+        emptyText: "Waiting for collected logs",
+        tooltip: collectedTooltip
+      });
+      drawTimeSeriesChart({
+        canvas: els.normalizedChart,
+        series,
+        key: "normalized",
+        color: colors.normalized,
+        emptyText: "Waiting for normalized logs",
+        tooltip: point => simpleTooltip(point, "Normalized logs", "normalized")
+      });
+      drawTimeSeriesChart({
+        canvas: els.storedChart,
+        series,
+        key: "databaseWritten",
+        color: colors.databaseWritten,
+        emptyText: "Waiting for database writes",
+        tooltip: point => simpleTooltip(point, "Database writer logs", "databaseWritten")
+      });
     }
 
     function setupCanvas(canvas) {
       const wrap = canvas.parentElement;
       const rect = wrap.getBoundingClientRect();
       const width = Math.max(280, rect.width);
-      const height = Math.max(240, rect.height);
+      const height = Math.max(220, rect.height);
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.floor(width * dpr);
       canvas.height = Math.floor(height * dpr);
@@ -652,95 +676,33 @@
       return { ctx, width, height };
     }
 
-    function drawCollectedSeriesChart(payload) {
-      const series = payload.series || [];
-      const sourceTypes = collectedSourceTypes(payload);
-      const lineDefs = sourceTypes.length > 0
-        ? sourceTypes.map((sourceType, index) => ({
-            label: displaySourceType(sourceType),
-            color: sourceColor(sourceType, index),
-            value: point => Number((point.collectedBySourceType || {})[sourceType] || 0)
-          }))
-        : [{
-            label: "Collected",
-            color: colors.collected,
-            value: point => Number(point.collected || 0)
-          }];
-
-      renderLegend(els.collectedLegend, lineDefs);
-      drawMultiTimeSeriesChart(els.collectedChart, series, lineDefs, "Waiting for collected logs");
-    }
-
-    function collectedSourceTypes(payload) {
-      const totals = new Map();
-      (payload.collectedByType || []).forEach(item => {
-        const sourceType = item.sourceType || "unknown";
-        const count = Number(item.count || 0);
-        if (count > 0) {
-          totals.set(sourceType, count);
-        }
-      });
-
-      (payload.series || []).forEach(point => {
-        Object.entries(point.collectedBySourceType || {}).forEach(([sourceType, count]) => {
-          if (Number(count || 0) > 0 && !totals.has(sourceType)) {
-            totals.set(sourceType, 0);
-          }
-        });
-      });
-
-      return Array.from(totals.keys())
-        .sort((left, right) => (totals.get(right) - totals.get(left)) || left.localeCompare(right));
-    }
-
-    function renderLegend(target, lineDefs) {
-      target.innerHTML = lineDefs.map(line => `
-        <span><i style="background:${line.color}"></i>${escapeHtml(line.label)}</span>
-      `).join("");
-    }
-
-    function sourceColor(sourceType, index) {
-      return sourceColorOverrides[sourceType] || sourcePalette[index % sourcePalette.length];
-    }
-
-    function displaySourceType(sourceType) {
-      const labels = {
-        "netflow-v5": "NetFlow v5",
-        "netflow-v9": "NetFlow v9",
-        "suricata-flow": "Suricata flow",
-        "zeek-conn": "Zeek conn"
-      };
-      return labels[sourceType] || sourceType;
-    }
-
-    function drawTimeSeriesChart(canvas, series, key, color, emptyText) {
-      drawMultiTimeSeriesChart(canvas, series, [{
-        color,
-        fill: true,
-        value: point => Number(point[key] || 0)
-      }], emptyText);
-    }
-
-    function drawMultiTimeSeriesChart(canvas, series, lineDefs, emptyText) {
+    function drawTimeSeriesChart({ canvas, series, key, color, emptyText, tooltip }) {
       const { ctx, width, height } = setupCanvas(canvas);
       const pad = { top: 18, right: 18, bottom: 34, left: 48 };
       const plotWidth = width - pad.left - pad.right;
       const plotHeight = height - pad.top - pad.bottom;
-      const maxValue = Math.max(
-        1,
-        ...series.flatMap(point => lineDefs.map(line => Number(line.value(point) || 0)))
-      );
-      const hasEvents = series.some(point => lineDefs.some(line => Number(line.value(point) || 0) > 0));
+      const maxValue = Math.max(1, ...series.map(point => Number(point[key] || 0)));
+      const hasEvents = series.some(point => Number(point[key] || 0) > 0);
+      const points = chartPoints(series, key, pad, plotWidth, plotHeight, maxValue);
 
       drawHorizontalGrid(ctx, pad, plotWidth, plotHeight, maxValue);
-      lineDefs.forEach(line => {
-        drawLine(ctx, series, line.value, line.color, pad, plotWidth, plotHeight, maxValue, line.fill === true);
-      });
+      drawLine(ctx, points, color, pad, plotHeight, true);
       drawXAxis(ctx, series, pad, plotWidth, plotHeight);
 
       if (!hasEvents) {
         drawEmpty(ctx, width, height, emptyText);
       }
+
+      chartStates.set(canvas, { series, key, pad, plotWidth, plotHeight, points, color, tooltip });
+      attachChartInteractions(canvas);
+    }
+
+    function chartPoints(series, key, pad, plotWidth, plotHeight, maxValue) {
+      return series.map((point, index) => {
+        const x = pad.left + (series.length === 1 ? 0 : (index / (series.length - 1)) * plotWidth);
+        const y = pad.top + plotHeight - (Number(point[key] || 0) / maxValue) * plotHeight;
+        return { x, y };
+      });
     }
 
     function drawHorizontalGrid(ctx, pad, plotWidth, plotHeight, maxValue) {
@@ -762,16 +724,10 @@
       }
     }
 
-    function drawLine(ctx, series, valueForPoint, color, pad, plotWidth, plotHeight, maxValue, fillArea) {
-      if (series.length === 0) {
+    function drawLine(ctx, points, color, pad, plotHeight, fillArea) {
+      if (points.length === 0) {
         return;
       }
-
-      const points = series.map((point, index) => {
-        const x = pad.left + (series.length === 1 ? 0 : (index / (series.length - 1)) * plotWidth);
-        const y = pad.top + plotHeight - (Number(valueForPoint(point) || 0) / maxValue) * plotHeight;
-        return { x, y };
-      });
 
       if (fillArea) {
         ctx.fillStyle = color;
@@ -830,6 +786,115 @@
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(text, width / 2, height / 2);
+    }
+
+    function attachChartInteractions(canvas) {
+      if (canvas.dataset.interactive === "true") {
+        return;
+      }
+      canvas.dataset.interactive = "true";
+      canvas.addEventListener("pointermove", handleChartPointer);
+      canvas.addEventListener("pointerleave", () => hideTooltip(canvas));
+    }
+
+    function handleChartPointer(event) {
+      const canvas = event.currentTarget;
+      const state = chartStates.get(canvas);
+      if (!state || state.series.length === 0) {
+        hideTooltip(canvas);
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const index = nearestPointIndex(x, state.series.length, state.pad.left, state.plotWidth);
+      const point = state.series[index];
+      const chartPoint = state.points[index];
+      showTooltip(canvas, chartPoint, state.tooltip(point));
+    }
+
+    function nearestPointIndex(x, length, left, plotWidth) {
+      if (length <= 1) {
+        return 0;
+      }
+      const ratio = Math.min(1, Math.max(0, (x - left) / plotWidth));
+      return Math.round(ratio * (length - 1));
+    }
+
+    function showTooltip(canvas, chartPoint, html) {
+      const tooltip = tooltipFor(canvas);
+      const wrap = canvas.parentElement;
+      const wrapWidth = wrap.getBoundingClientRect().width;
+      tooltip.innerHTML = html;
+      tooltip.classList.remove("hidden");
+
+      const tooltipWidth = tooltip.offsetWidth;
+      const minX = tooltipWidth / 2 + 8;
+      const maxX = wrapWidth - tooltipWidth / 2 - 8;
+      const x = maxX < minX ? wrapWidth / 2 : Math.min(maxX, Math.max(minX, chartPoint.x));
+      const y = Math.max(18, chartPoint.y);
+      tooltip.style.left = `${x}px`;
+      tooltip.style.top = `${y}px`;
+    }
+
+    function hideTooltip(canvas) {
+      const tooltip = canvas.parentElement.querySelector(".chart-tooltip");
+      if (tooltip) {
+        tooltip.classList.add("hidden");
+      }
+    }
+
+    function tooltipFor(canvas) {
+      let tooltip = canvas.parentElement.querySelector(".chart-tooltip");
+      if (!tooltip) {
+        tooltip = document.createElement("div");
+        tooltip.className = "chart-tooltip hidden";
+        canvas.parentElement.appendChild(tooltip);
+      }
+      return tooltip;
+    }
+
+    function collectedTooltip(point) {
+      const sourceValues = point.collectedBySourceType || {};
+      const rows = SOURCE_TYPES.map(sourceType => {
+        const count = Number(sourceValues[sourceType] || 0);
+        return `
+          <div class="tooltip-row">
+            <span class="tooltip-label"><span class="tooltip-dot" style="background:${sourceColor(sourceType)}"></span>${escapeHtml(displaySourceType(sourceType))}</span>
+            <strong>${formatNumber(count)}</strong>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="tooltip-title">${escapeHtml(formatTime(point.timestamp))} / ${formatNumber(point.collected)} collected</div>
+        ${rows}
+      `;
+    }
+
+    function simpleTooltip(point, label, key) {
+      return `
+        <div class="tooltip-title">${escapeHtml(formatTime(point.timestamp))}</div>
+        <div class="tooltip-row">
+          <span>${escapeHtml(label)}</span>
+          <strong>${formatNumber(point[key] || 0)}</strong>
+        </div>
+      `;
+    }
+
+    function sourceColor(sourceType) {
+      return sourceColorOverrides[sourceType] || colors.collected;
+    }
+
+    function displaySourceType(sourceType) {
+      const labels = {
+        "netflow-v5": "NetFlow v5",
+        "netflow-v9": "NetFlow v9",
+        "suricata-flow": "Suricata",
+        "zeek-conn": "Zeek",
+        "rest": "Ingest API"
+      };
+      return labels[sourceType] || sourceType;
     }
 
     function formatCompact(value) {

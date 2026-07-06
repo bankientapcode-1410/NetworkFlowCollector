@@ -10,11 +10,16 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.kien.networkflowcollector.common.NormalizedFlow;
+import com.kien.networkflowcollector.enrichment.FlowEnrichmentProvider;
+import com.kien.networkflowcollector.enrichment.IpEnrichment;
+import com.kien.networkflowcollector.metrics.PipelineMetrics;
 import com.kien.networkflowcollector.spi.RawFlowRecord;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -52,6 +57,56 @@ class FlowNormalizationServiceTest {
         assertThat(result).isSameAs(expected);
         verify(registry).normalize(any());
         verify(validator).validate(expected);
+    }
+
+    @Test
+    @DisplayName("Valid record -> enriches before validation")
+    void normalize_validRecord_enrichesBeforeValidation() {
+        FlowEnrichmentProvider provider =
+                ip -> switch (ip) {
+                    case "8.8.8.8" -> Optional.of(new IpEnrichment("US", 15_169L, "Google LLC"));
+                    case "93.184.216.34" -> Optional.of(new IpEnrichment("US", 15_133L, "Edgecast Inc"));
+                    default -> Optional.empty();
+                };
+        service = new FlowNormalizationService(registry, validator, provider, PipelineMetrics.unregistered());
+        NormalizedFlow base =
+                new NormalizedFlow(
+                        UUID.randomUUID(),
+                        Instant.parse("2026-07-05T00:00:00Z"),
+                        Instant.parse("2026-07-05T00:00:01Z"),
+                        1_000,
+                        "8.8.8.8",
+                        53,
+                        "93.184.216.34",
+                        443,
+                        "udp",
+                        100,
+                        2,
+                        null,
+                        false,
+                        null,
+                        null,
+                        "rest",
+                        "127.0.0.1",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        NOW);
+        when(registry.ready()).thenReturn(true);
+        when(registry.normalize(any())).thenReturn(base);
+
+        NormalizedFlow result = service.normalize(rawRecord());
+
+        assertThat(result.srcCountryCode()).isEqualTo("US");
+        assertThat(result.srcAsn()).isEqualTo(15_169L);
+        assertThat(result.srcAsOrg()).isEqualTo("Google LLC");
+        assertThat(result.dstCountryCode()).isEqualTo("US");
+        assertThat(result.dstAsn()).isEqualTo(15_133L);
+        assertThat(result.dstAsOrg()).isEqualTo("Edgecast Inc");
+        verify(validator).validate(result);
     }
 
     @Test

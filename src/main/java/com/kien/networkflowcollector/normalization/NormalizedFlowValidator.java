@@ -11,6 +11,7 @@ public class NormalizedFlowValidator {
 
     private static final int MAX_PORT = 65_535;
     private static final int MAX_TCP_FLAGS = 65_535;
+    private static final long MAX_UINT32 = 4_294_967_295L;
 
     public void validate(NormalizedFlow flow) {
         Objects.requireNonNull(flow, "flow");
@@ -51,6 +52,31 @@ public class NormalizedFlowValidator {
             require(flow.samplingRate() == null, flow, "invalid_sampling", "unsampled flows must not set samplingRate");
             require(flow.samplePool() == null, flow, "invalid_sampling", "unsampled flows must not set samplePool");
         }
+
+        validateCountryCode(flow.srcCountryCode(), flow, "srcCountryCode");
+        validateCountryCode(flow.dstCountryCode(), flow, "dstCountryCode");
+        validateAsn(flow.srcAsn(), flow, "srcAsn");
+        validateAsn(flow.dstAsn(), flow, "dstAsn");
+    }
+
+    private static void validateCountryCode(String countryCode, NormalizedFlow flow, String fieldName) {
+        if (countryCode == null) {
+            return;
+        }
+        require(
+                countryCode.length() == 2
+                        && Character.isUpperCase(countryCode.charAt(0))
+                        && Character.isUpperCase(countryCode.charAt(1)),
+                flow,
+                "invalid_enrichment",
+                fieldName + " must be an uppercase ISO-3166 alpha-2 code");
+    }
+
+    private static void validateAsn(Long asn, NormalizedFlow flow, String fieldName) {
+        if (asn == null) {
+            return;
+        }
+        require(asn >= 0 && asn <= MAX_UINT32, flow, "invalid_enrichment", fieldName + " must fit UInt32");
     }
 
     private static void require(boolean condition, NormalizedFlow flow, String reason, String message) {
