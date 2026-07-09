@@ -53,12 +53,14 @@ class NetFlowV9NormalizerTest {
         return new RawFlowRecord("netflow-v9", "10.0.0.1", RECEIVED_AT, fields);
     }
 
+    // Test happy path: NetFlowV9Normalizer reports the v9 source type.
     @Test
     @DisplayName("sourceType returns 'netflow-v9'")
     void sourceType_returnsNetflowV9() {
         assertThat(normalizer.sourceType()).isEqualTo("netflow-v9");
     }
 
+    // Test happy path: valid NetFlow v9 raw fields map into NormalizedFlow.
     @Test
     @DisplayName("Valid record → NormalizedFlow with correct fields")
     void normalize_validRecord_returnsNormalizedFlow() {
@@ -79,6 +81,7 @@ class NetFlowV9NormalizerTest {
         assertThat(flow.exporterIp()).isEqualTo("10.0.0.1");
     }
 
+    // Test happy path: missing optional NetFlow v9 fields use defaults.
     @Test
     @DisplayName("Missing optional fields → uses defaults")
     void normalize_missingOptionalFields_usesDefaults() {
@@ -96,6 +99,7 @@ class NetFlowV9NormalizerTest {
         assertThat(flow.dstIp()).isEqualTo("0.0.0.0");
     }
 
+    // Test happy path: sampling rate marks a NetFlow v9 record as sampled.
     @Test
     @DisplayName("Sampling rate > 1 → sampled=true")
     void normalize_samplingRate_setsSampledFlag() {
@@ -109,6 +113,7 @@ class NetFlowV9NormalizerTest {
         assertThat(flow.samplingRate()).isEqualTo(100L);
     }
 
+    // Test happy path: no sampling fields keeps NetFlow v9 record unsampled.
     @Test
     @DisplayName("No sampling fields → unsampled defaults")
     void normalize_noSampling_unsampledDefaults() {
@@ -121,6 +126,7 @@ class NetFlowV9NormalizerTest {
         assertThat(flow.samplingRate()).isNull();
     }
 
+    // Test happy path: same NetFlow v9 input creates a deterministic flowId.
     @Test
     @DisplayName("Same input → same flowId (deterministic)")
     void normalize_flowIdDeterministic() {
@@ -132,6 +138,7 @@ class NetFlowV9NormalizerTest {
         assertThat(id1).isEqualTo(id2);
     }
 
+    // Test exception: wrong source type in NetFlowV9Normalizer.
     @Test
     @DisplayName("Wrong source type → IllegalArgumentException")
     void normalize_wrongSourceType_throwsException() {
@@ -140,5 +147,13 @@ class NetFlowV9NormalizerTest {
         assertThatThrownBy(() -> normalizer.normalize(raw))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unsupported source type");
+    }
+
+    // Test exception: null raw record in NetFlowV9Normalizer.
+    @Test
+    @DisplayName("Null raw record → NullPointerException")
+    void normalize_nullRawRecord_throwsNPE() {
+        assertThatThrownBy(() -> normalizer.normalize(null))
+                .isInstanceOf(NullPointerException.class);
     }
 }

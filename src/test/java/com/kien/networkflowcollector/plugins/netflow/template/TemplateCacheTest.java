@@ -23,6 +23,7 @@ class TemplateCacheTest {
                 false);
     }
 
+    // Test happy path: put/get returns a stored NetFlow v9 template.
     @Test
     @DisplayName("put and get → returns stored template")
     void putAndGet_returnsStoredTemplate() {
@@ -36,6 +37,7 @@ class TemplateCacheTest {
         assertThat(result.fields()).hasSize(2);
     }
 
+    // Test happy path: missing NetFlow v9 template lookup returns null.
     @Test
     @DisplayName("get for missing key → returns null")
     void get_missingTemplate_returnsNull() {
@@ -44,6 +46,7 @@ class TemplateCacheTest {
         assertThat(result).isNull();
     }
 
+    // Test happy path: same NetFlow v9 template key replaces the previous template.
     @Test
     @DisplayName("put with same key → replaces existing template")
     void put_replacesExistingTemplate() {
@@ -59,6 +62,7 @@ class TemplateCacheTest {
         assertThat(result.fields()).hasSize(1);
     }
 
+    // Test happy path: removing a NetFlow v9 template deletes it from the cache.
     @Test
     @DisplayName("remove → subsequent get returns null")
     void remove_deletesTemplate() {
@@ -68,6 +72,7 @@ class TemplateCacheTest {
         assertThat(cache.get("netflow-v9", "10.0.0.1", 100L, 256)).isNull();
     }
 
+    // Test happy path: exporter keys keep NetFlow v9 templates separate.
     @Test
     @DisplayName("Different exporter keys → separate templates")
     void differentExporterKeys_separateTemplates() {
@@ -82,6 +87,7 @@ class TemplateCacheTest {
         assertThat(cache.get("netflow-v9", "10.0.0.2", 100L, 256).fields()).hasSize(1);
     }
 
+    // Test happy path: source/domain IDs keep NetFlow v9 templates separate.
     @Test
     @DisplayName("Different domain IDs → separate templates")
     void differentDomainIds_separateTemplates() {

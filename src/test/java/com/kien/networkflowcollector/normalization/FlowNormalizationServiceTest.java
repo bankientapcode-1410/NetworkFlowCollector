@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -175,5 +176,68 @@ class FlowNormalizationServiceTest {
         when(registry.coverage()).thenReturn(coverage);
 
         assertThat(service.coverage()).isSameAs(coverage);
+    }
+
+    @Test
+    @DisplayName("Valid record -> validates after enrichment and before masking")
+    void normalize_validRecord_validatesAfterEnrichmentBeforeMasking() {
+        FlowEnrichmentProvider provider =
+                ip -> "8.8.8.8".equals(ip)
+                        ? Optional.of(new IpEnrichment("US", 15_169L, "Google LLC"))
+                        : Optional.empty();
+        FlowMaskingProperties properties = new FlowMaskingProperties();
+        properties.setEnabled(true);
+        FlowMaskingProperties.Rule ipRule = new FlowMaskingProperties.Rule();
+        ipRule.setField("src_ip");
+        ipRule.setStrategy(FlowMaskingProperties.Strategy.PREFIX_TRUNCATE);
+        ipRule.setIpv4Prefix(24);
+        FlowMaskingProperties.Rule orgRule = new FlowMaskingProperties.Rule();
+        orgRule.setField("src_as_org");
+        orgRule.setStrategy(FlowMaskingProperties.Strategy.REDACT);
+        properties.setRules(List.of(ipRule, orgRule));
+        service =
+                new FlowNormalizationService(
+                        registry,
+                        validator,
+                        provider,
+                        PipelineMetrics.unregistered(),
+                        new NormalizedFlowMasker(properties));
+        NormalizedFlow base =
+                new NormalizedFlow(
+                        UUID.randomUUID(),
+                        Instant.parse("2026-07-05T00:00:00Z"),
+                        Instant.parse("2026-07-05T00:00:01Z"),
+                        1_000,
+                        "8.8.8.8",
+                        53,
+                        "93.184.216.34",
+                        443,
+                        "udp",
+                        100,
+                        2,
+                        null,
+                        false,
+                        null,
+                        null,
+                        "rest",
+                        "127.0.0.1",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        NOW);
+        when(registry.ready()).thenReturn(true);
+        when(registry.normalize(any())).thenReturn(base);
+
+        NormalizedFlow result = service.normalize(rawRecord());
+
+        assertThat(result.srcIp()).isEqualTo("8.8.8.0");
+        assertThat(result.srcAsOrg()).isEqualTo("[REDACTED]");
+        ArgumentCaptor<NormalizedFlow> validated = ArgumentCaptor.forClass(NormalizedFlow.class);
+        verify(validator).validate(validated.capture());
+        assertThat(validated.getValue().srcIp()).isEqualTo("8.8.8.8");
+        assertThat(validated.getValue().srcAsOrg()).isEqualTo("Google LLC");
     }
 }

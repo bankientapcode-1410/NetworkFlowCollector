@@ -59,6 +59,7 @@ class RestFlowCollectorTest {
         assertThat(collector.health().status()).isEqualTo(CollectorStatus.UP);
     }
 
+    // Verifies validation errors reject the full batch before any record reaches the publisher.
     @Test
     void rejectsInvalidBatchBeforePublishingAnyRecord() throws Exception {
         InMemoryPublisher publisher = new InMemoryPublisher();
@@ -73,6 +74,7 @@ class RestFlowCollectorTest {
         assertThat(collector.health().status()).isEqualTo(CollectorStatus.DEGRADED);
     }
 
+    // Verifies configured batch-size validation reports a REST ingest validation exception.
     @Test
     void rejectsBatchOverConfiguredLimit() throws Exception {
         RestFlowCollector collector = startedCollector(new InMemoryPublisher(), 1);
@@ -83,6 +85,70 @@ class RestFlowCollectorTest {
                 .hasMessageContaining("exceeds max_batch_size 1");
     }
 
+    // Verifies an enabled REST collector cannot initialize without a publisher.
+    @Test
+    void rejectsEnabledInitWithoutPublisher() {
+        RestFlowCollector collector = new RestFlowCollector();
+
+        assertThatThrownBy(() -> collector.init(new CollectorConfig(true, Map.of()), null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("publisher");
+        assertThat(collector.health().status()).isEqualTo(CollectorStatus.DOWN);
+    }
+
+    // Verifies ingest reports unavailable when the collector is disabled.
+    @Test
+    void rejectsIngestWhenDisabled() throws Exception {
+        RestFlowCollector collector = new RestFlowCollector();
+        collector.init(new CollectorConfig(false, Map.of()), null);
+
+        assertThatThrownBy(() -> collector.ingest(json(validPayload())))
+                .isInstanceOf(RestIngestUnavailableException.class)
+                .hasMessageContaining("disabled");
+    }
+
+    // Verifies ingest reports unavailable when the collector was initialized but not started.
+    @Test
+    void rejectsIngestBeforeStart() throws Exception {
+        RestFlowCollector collector = new RestFlowCollector();
+        collector.init(new CollectorConfig(true, Map.of("maxBatchSize", 5)), new InMemoryPublisher());
+
+        assertThatThrownBy(() -> collector.ingest(json(validPayload())))
+                .isInstanceOf(RestIngestUnavailableException.class)
+                .hasMessageContaining("not ready");
+    }
+
+    // Verifies synchronous publisher failures are mapped to REST publish exceptions.
+    @Test
+    void mapsSynchronousPublisherFailureToRestException() throws Exception {
+        RestFlowCollector collector =
+                startedCollector(
+                        record -> {
+                            throw new IllegalStateException("publisher down");
+                        },
+                        5);
+
+        assertThatThrownBy(() -> collector.ingest(json(validPayload())))
+                .isInstanceOf(RestIngestPublishException.class)
+                .hasMessageContaining("publisher is unavailable");
+        assertThat(collector.health().status()).isEqualTo(CollectorStatus.DEGRADED);
+    }
+
+    // Verifies asynchronous publisher failures are mapped to REST publish exceptions.
+    @Test
+    void mapsAsyncPublisherFailureToRestException() throws Exception {
+        RestFlowCollector collector =
+                startedCollector(
+                        record -> CompletableFuture.failedFuture(new IllegalStateException("publisher down")),
+                        5);
+
+        assertThatThrownBy(() -> collector.ingest(json(validPayload())))
+                .isInstanceOf(RestIngestPublishException.class)
+                .hasMessageContaining("publisher is unavailable");
+        assertThat(collector.health().status()).isEqualTo(CollectorStatus.DEGRADED);
+    }
+
+    // Verifies publisher backpressure is exposed as the REST backpressure exception.
     @Test
     void mapsPublisherBackpressureToRestException() throws Exception {
         RestFlowCollector collector =

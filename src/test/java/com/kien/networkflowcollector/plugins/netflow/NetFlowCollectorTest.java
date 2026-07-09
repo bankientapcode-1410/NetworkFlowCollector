@@ -15,6 +15,7 @@ class NetFlowCollectorTest {
 
     private final NetFlowCollector collector = new NetFlowCollector();
 
+    // Test happy path: generic NetFlow collector dispatches v5 packets to the v5 decoder.
     @Test
     void dispatchesNetFlowV5Packets() {
         Instant receivedAt = Instant.parse("2026-06-24T12:00:00Z");
@@ -28,6 +29,7 @@ class NetFlowCollectorTest {
         assertThat(records.getFirst().receivedAt()).isEqualTo(receivedAt);
     }
 
+    // Test happy path: generic NetFlow collector dispatches v9 packets to the v9 decoder.
     @Test
     void dispatchesNetFlowV9Packets() {
         List<RawFlowRecord> records =
@@ -40,6 +42,23 @@ class NetFlowCollectorTest {
         assertThat(records).isEmpty();
     }
 
+    // Test exception: packet shorter than a NetFlow version field in NetFlowCollector.
+    @Test
+    void rejectsTooShortNetFlowPacket() {
+        byte[] packet = new byte[] {0x00};
+
+        assertThatThrownBy(
+                        () ->
+                                collector.decode(
+                                        Unpooled.wrappedBuffer(packet),
+                                        "198.51.100.7",
+                                        55_000,
+                                        Instant.now()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("NetFlow packet too short");
+    }
+
+    // Test exception: unsupported NetFlow version in NetFlowCollector.
     @Test
     void rejectsUnsupportedNetFlowVersion() {
         byte[] packet = ByteBuffer.allocate(2).order(ByteOrder.BIG_ENDIAN).putShort((short) 7).array();

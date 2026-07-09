@@ -79,6 +79,7 @@ class ZeekConnLogDecoderTest {
         assertThat(record).isEmpty();
     }
 
+    // Verifies Zeek conn data lines before #fields metadata raise a decode exception.
     @Test
     void rejectsDataBeforeFieldsMetadata() {
         assertThatThrownBy(() -> decoder.decodeLine(connLine(), "sensor-1", Instant.now()))

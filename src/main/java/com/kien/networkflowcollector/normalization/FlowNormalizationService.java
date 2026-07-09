@@ -18,21 +18,37 @@ public class FlowNormalizationService {
     private final NormalizedFlowValidator validator;
     private final FlowEnrichmentProvider enrichmentProvider;
     private final PipelineMetrics metrics;
+    private final NormalizedFlowMasker masker;
 
     @Autowired
     public FlowNormalizationService(
             NormalizerRegistry registry,
             NormalizedFlowValidator validator,
             FlowEnrichmentProvider enrichmentProvider,
-            PipelineMetrics metrics) {
+            PipelineMetrics metrics,
+            NormalizedFlowMasker masker) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.validator = Objects.requireNonNull(validator, "validator");
         this.enrichmentProvider = Objects.requireNonNull(enrichmentProvider, "enrichmentProvider");
         this.metrics = Objects.requireNonNull(metrics, "metrics");
+        this.masker = Objects.requireNonNull(masker, "masker");
+    }
+
+    public FlowNormalizationService(
+            NormalizerRegistry registry,
+            NormalizedFlowValidator validator,
+            FlowEnrichmentProvider enrichmentProvider,
+            PipelineMetrics metrics) {
+        this(registry, validator, enrichmentProvider, metrics, NormalizedFlowMasker.noop());
     }
 
     FlowNormalizationService(NormalizerRegistry registry, NormalizedFlowValidator validator) {
-        this(registry, validator, FlowEnrichmentProvider.noop(), PipelineMetrics.unregistered());
+        this(
+                registry,
+                validator,
+                FlowEnrichmentProvider.noop(),
+                PipelineMetrics.unregistered(),
+                NormalizedFlowMasker.noop());
     }
 
     public NormalizedFlow normalize(RawFlowRecord raw) {
@@ -42,6 +58,7 @@ public class FlowNormalizationService {
         }
         NormalizedFlow flow = enrich(registry.normalize(raw));
         validator.validate(flow);
+        flow = masker.mask(flow);
         metrics.recordNormalized();
         return flow;
     }

@@ -45,6 +45,7 @@ class ZeekConnNormalizerTest {
         assertThat(normalizer.normalize(raw).flowId()).isEqualTo(normalizer.normalize(raw).flowId());
     }
 
+    // Verifies unsupported source types are rejected before Zeek normalization.
     @Test
     void rejectsUnsupportedSourceType() {
         RawFlowRecord raw =

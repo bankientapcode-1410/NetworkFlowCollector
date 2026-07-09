@@ -79,6 +79,7 @@ class SuricataEveDecoderTest {
         assertThat(record).isEmpty();
     }
 
+    // Verifies malformed Suricata EVE JSON raises a decode exception.
     @Test
     void rejectsInvalidEveJson() {
         assertThatThrownBy(

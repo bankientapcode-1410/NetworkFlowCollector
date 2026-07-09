@@ -53,12 +53,14 @@ class NetFlowV5NormalizerTest {
         return new RawFlowRecord("netflow-v5", "10.0.0.1", RECEIVED_AT, fields);
     }
 
+    // Test happy path: NetFlowV5Normalizer reports the v5 source type.
     @Test
     @DisplayName("sourceType returns 'netflow-v5'")
     void sourceType_returnsNetflowV5() {
         assertThat(normalizer.sourceType()).isEqualTo("netflow-v5");
     }
 
+    // Test happy path: valid NetFlow v5 raw fields map into NormalizedFlow.
     @Test
     @DisplayName("Valid record → all fields mapped to NormalizedFlow")
     void normalize_validRecord_returnsNormalizedFlow() {
@@ -82,6 +84,7 @@ class NetFlowV5NormalizerTest {
         assertThat(flow.ingestTime()).isEqualTo(RECEIVED_AT);
     }
 
+    // Test happy path: TCP NetFlow v5 records include tcpFlags.
     @Test
     @DisplayName("TCP protocol → tcpFlags included")
     void normalize_tcpProtocol_includesTcpFlags() {
@@ -94,6 +97,7 @@ class NetFlowV5NormalizerTest {
         assertThat(flow.tcpFlags()).isEqualTo(0x12);
     }
 
+    // Test happy path: non-TCP NetFlow v5 records omit tcpFlags.
     @Test
     @DisplayName("Non-TCP protocol → tcpFlags is null")
     void normalize_nonTcpProtocol_nullTcpFlags() {
@@ -107,6 +111,7 @@ class NetFlowV5NormalizerTest {
         assertThat(flow.tcpFlags()).isNull();
     }
 
+    // Test happy path: sampled NetFlow v5 records set sampled metadata.
     @Test
     @DisplayName("Sampled flow → sampled=true, samplingRate set")
     void normalize_sampled_setsRateAndFlag() {
@@ -120,6 +125,7 @@ class NetFlowV5NormalizerTest {
         assertThat(flow.samplingRate()).isEqualTo(100L);
     }
 
+    // Test happy path: unsampled NetFlow v5 records leave sampling rate null.
     @Test
     @DisplayName("Unsampled flow → sampled=false, samplingRate null")
     void normalize_unsampled_nullRate() {
@@ -133,6 +139,7 @@ class NetFlowV5NormalizerTest {
         assertThat(flow.samplingRate()).isNull();
     }
 
+    // Test happy path: same NetFlow v5 input creates a deterministic flowId.
     @Test
     @DisplayName("Same input → same flowId (deterministic UUID)")
     void normalize_flowIdDeterministic() {
@@ -144,6 +151,7 @@ class NetFlowV5NormalizerTest {
         assertThat(id1).isEqualTo(id2);
     }
 
+    // Test happy path: different NetFlow v5 inputs create different flowIds.
     @Test
     @DisplayName("Different inputs → different flowIds")
     void normalize_differentInputs_differentFlowIds() {
@@ -157,6 +165,7 @@ class NetFlowV5NormalizerTest {
         assertThat(id1).isNotEqualTo(id2);
     }
 
+    // Test exception: wrong source type in NetFlowV5Normalizer.
     @Test
     @DisplayName("Wrong source type → IllegalArgumentException")
     void normalize_wrongSourceType_throwsException() {
@@ -167,6 +176,7 @@ class NetFlowV5NormalizerTest {
                 .hasMessageContaining("Unsupported source type");
     }
 
+    // Test exception: missing required field in NetFlowV5Normalizer.
     @Test
     @DisplayName("Missing required field → IllegalArgumentException")
     void normalize_missingRequiredField_throwsException() {
@@ -176,5 +186,13 @@ class NetFlowV5NormalizerTest {
         assertThatThrownBy(() -> normalizer.normalize(rawRecord(f)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("src_ip");
+    }
+
+    // Test exception: null raw record in NetFlowV5Normalizer.
+    @Test
+    @DisplayName("Null raw record → NullPointerException")
+    void normalize_nullRawRecord_throwsNPE() {
+        assertThatThrownBy(() -> normalizer.normalize(null))
+                .isInstanceOf(NullPointerException.class);
     }
 }

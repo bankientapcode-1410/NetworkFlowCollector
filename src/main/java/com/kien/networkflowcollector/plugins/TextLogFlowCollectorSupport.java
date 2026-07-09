@@ -31,6 +31,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public abstract class TextLogFlowCollectorSupport implements FlowCollector {
 
     private static final long DEFAULT_POLL_INTERVAL_MS = 1_000L;
+    private static final long STOP_TIMEOUT_SECONDS = 10L;
 
     private final String type;
     private final Set<String> supportedSourceTypes;
@@ -136,6 +137,11 @@ public abstract class TextLogFlowCollectorSupport implements FlowCollector {
         executor = null;
         if (currentExecutor != null) {
             currentExecutor.shutdownNow();
+            try {
+                currentExecutor.awaitTermination(STOP_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
         }
         status = CollectorStatus.STOPPED;
         message = "stopped";

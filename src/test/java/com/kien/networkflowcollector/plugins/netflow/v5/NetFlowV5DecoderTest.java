@@ -108,6 +108,7 @@ class NetFlowV5DecoderTest {
 
     // ── tests ───────────────────────────────────────────────────
 
+    // Test happy path: valid NetFlow v5 packet returns one RawFlowRecord per record.
     @Test
     @DisplayName("Valid packet with 2 records → returns 2 RawFlowRecords")
     void decode_validPacketWith2Records_returns2RawFlowRecords() {
@@ -123,6 +124,7 @@ class NetFlowV5DecoderTest {
         });
     }
 
+    // Test happy path: single NetFlow v5 record maps expected fields.
     @Test
     @DisplayName("Single record → all fields extracted correctly")
     void decode_singleRecord_returnsCorrectFields() {
@@ -163,6 +165,7 @@ class NetFlowV5DecoderTest {
         assertThat(f.get("duration_ms")).isNotNull();
     }
 
+    // Test exception: packet shorter than the NetFlow v5 header in NetFlowV5Decoder.
     @Test
     @DisplayName("Packet too short (<24 bytes) → throws NetFlowV5DecodeException")
     void decode_packetTooShort_throwsDecodeException() {
@@ -174,6 +177,7 @@ class NetFlowV5DecoderTest {
                 .hasMessageContaining("too short");
     }
 
+    // Test exception: unsupported packet version in NetFlowV5Decoder.
     @Test
     @DisplayName("Wrong version (9) → throws NetFlowV5DecodeException")
     void decode_wrongVersion_throwsDecodeException() {
@@ -187,6 +191,7 @@ class NetFlowV5DecoderTest {
                 .hasMessageContaining("Unsupported");
     }
 
+    // Test exception: v5 record count exceeds the protocol maximum in NetFlowV5Decoder.
     @Test
     @DisplayName("Record count > 30 → throws NetFlowV5DecodeException")
     void decode_recordCountExceeds30_throwsDecodeException() {
@@ -200,6 +205,7 @@ class NetFlowV5DecoderTest {
                 .hasMessageContaining("exceeds 30");
     }
 
+    // Test exception: packet body is shorter than declared record count in NetFlowV5Decoder.
     @Test
     @DisplayName("Truncated packet (header says 2 records, only 1 present) → throws")
     void decode_truncatedPacket_throwsDecodeException() {
@@ -212,6 +218,7 @@ class NetFlowV5DecoderTest {
                 .hasMessageContaining("truncated");
     }
 
+    // Test exception: null packet argument in NetFlowV5Decoder.
     @Test
     @DisplayName("Null packet → NullPointerException")
     void decode_nullPacket_throwsNPE() {
@@ -219,6 +226,7 @@ class NetFlowV5DecoderTest {
                 .isInstanceOf(NullPointerException.class);
     }
 
+    // Test exception: null exporter IP argument in NetFlowV5Decoder.
     @Test
     @DisplayName("Null exporterIp → NullPointerException")
     void decode_nullExporterIp_throwsNPE() {
@@ -227,6 +235,7 @@ class NetFlowV5DecoderTest {
                 .isInstanceOf(NullPointerException.class);
     }
 
+    // Test exception: null receivedAt argument in NetFlowV5Decoder.
     @Test
     @DisplayName("Null receivedAt → NullPointerException")
     void decode_nullReceivedAt_throwsNPE() {
@@ -235,6 +244,7 @@ class NetFlowV5DecoderTest {
                 .isInstanceOf(NullPointerException.class);
     }
 
+    // Test happy path: TCP protocol number maps to tcp in NetFlowV5Decoder.
     @Test
     @DisplayName("Protocol TCP (6) → protocol name = 'tcp'")
     void decode_protocolTcpSetsCorrectName() {
@@ -247,6 +257,7 @@ class NetFlowV5DecoderTest {
         assertThat(f.get("protocol")).isEqualTo("tcp");
     }
 
+    // Test happy path: UDP protocol number maps to udp in NetFlowV5Decoder.
     @Test
     @DisplayName("Protocol UDP (17) → protocol name = 'udp'")
     void decode_protocolUdpSetsCorrectName() {
@@ -259,6 +270,7 @@ class NetFlowV5DecoderTest {
         assertThat(f.get("protocol")).isEqualTo("udp");
     }
 
+    // Test happy path: ICMP protocol number maps to icmp in NetFlowV5Decoder.
     @Test
     @DisplayName("Protocol ICMP (1) → protocol name = 'icmp'")
     void decode_protocolIcmpSetsCorrectName() {
@@ -271,6 +283,7 @@ class NetFlowV5DecoderTest {
         assertThat(f.get("protocol")).isEqualTo("icmp");
     }
 
+    // Test happy path: sampling fields are parsed from the NetFlow v5 header.
     @Test
     @DisplayName("Sampling fields parsed from header correctly")
     void decode_samplingFieldsParsedCorrectly() {
@@ -283,6 +296,7 @@ class NetFlowV5DecoderTest {
         assertThat(f.get("sampling_interval")).isEqualTo(500);
     }
 
+    // Test happy path: flow_sequence is preserved from the NetFlow v5 header.
     @Test
     @DisplayName("flow_sequence from header preserved in record fields")
     void decode_flowSequenceFieldPreserved() {
@@ -294,6 +308,7 @@ class NetFlowV5DecoderTest {
         assertThat(f.get("flow_sequence")).isEqualTo(42L);
     }
 
+    // Test happy path: record_index increments for each NetFlow v5 record.
     @Test
     @DisplayName("record_index increments across records (0, 1)")
     void decode_recordIndexIncrements() {

@@ -46,6 +46,7 @@ class RestIngestControllerTest {
         assertThat(publisher.records().getFirst().sourceType()).isEqualTo("rest");
     }
 
+    // Verifies REST ingest validation exceptions are translated to HTTP 422.
     @Test
     void postIngestValidationFailureReturns422AndPublishesNothing() throws Exception {
         InMemoryPublisher publisher = new InMemoryPublisher();

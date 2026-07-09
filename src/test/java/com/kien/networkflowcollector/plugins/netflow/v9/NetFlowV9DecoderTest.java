@@ -98,6 +98,7 @@ class NetFlowV9DecoderTest {
 
     // ── tests ───────────────────────────────────────────────────
 
+    // Test happy path: template FlowSet followed by data FlowSet in NetFlowV9Decoder.
     @Test
     @DisplayName("Template then Data → returns decoded records")
     void decode_templateThenData_returnsRecords() {
@@ -121,6 +122,7 @@ class NetFlowV9DecoderTest {
         assertThat(records.get(0).sourceType()).isEqualTo("netflow-v9");
     }
 
+    // Test exception: data FlowSet arrives before its template in NetFlowV9Decoder.
     @Test
     @DisplayName("Data before template → throws missing template")
     void decode_dataBeforeTemplate_throwsMissingTemplate() {
@@ -136,6 +138,7 @@ class NetFlowV9DecoderTest {
                 .hasMessageContaining("Missing");
     }
 
+    // Test exception: packet shorter than the NetFlow v9 header in NetFlowV9Decoder.
     @Test
     @DisplayName("Packet too short (<20 bytes) → throws")
     void decode_packetTooShort_throwsDecodeException() {
@@ -147,6 +150,7 @@ class NetFlowV9DecoderTest {
                 .hasMessageContaining("too short");
     }
 
+    // Test exception: unsupported packet version in NetFlowV9Decoder.
     @Test
     @DisplayName("Wrong version (5) → throws")
     void decode_wrongVersion_throwsDecodeException() {
@@ -160,6 +164,7 @@ class NetFlowV9DecoderTest {
                 .hasMessageContaining("Unsupported");
     }
 
+    // Test exception: FlowSet length below the minimum header size in NetFlowV9Decoder.
     @Test
     @DisplayName("FlowSet length < 4 → throws")
     void decode_invalidFlowSetLength_throwsDecodeException() {
@@ -173,6 +178,7 @@ class NetFlowV9DecoderTest {
                 .hasMessageContaining("Invalid");
     }
 
+    // Test exception: FlowSet length extends beyond packet end in NetFlowV9Decoder.
     @Test
     @DisplayName("Truncated FlowSet (extends past packet) → throws")
     void decode_truncatedFlowSet_throwsDecodeException() {
@@ -186,6 +192,176 @@ class NetFlowV9DecoderTest {
                 .hasMessageContaining("truncated");
     }
 
+    // Test exception: non-zero short template padding in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Template padding with non-zero bytes → throws")
+    void decode_nonZeroTemplatePadding_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN + 7);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(0);
+        buf.writeShort(7);
+        buf.writeByte(0x01);
+        buf.writeByte(0x02);
+        buf.writeByte(0x03);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("template padding");
+    }
+
+    // Test exception: invalid template id/count in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Invalid template id/count → throws")
+    void decode_invalidTemplateIdOrCount_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN + 8);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(0);
+        buf.writeShort(8);
+        buf.writeShort(256);
+        buf.writeShort(0);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("template id/count");
+    }
+
+    // Test exception: template record does not contain all declared fields in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Truncated template record → throws")
+    void decode_truncatedTemplateRecord_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN + 12);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(0);
+        buf.writeShort(12);
+        buf.writeShort(256);
+        buf.writeShort(2);
+        buf.writeShort(8);
+        buf.writeShort(4);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("template record truncated");
+    }
+
+    // Test exception: non-zero short options-template padding in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Options template padding with non-zero bytes → throws")
+    void decode_nonZeroOptionsTemplatePadding_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN + 5);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(1);
+        buf.writeShort(5);
+        buf.writeByte(0x01);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("options template padding");
+    }
+
+    // Test exception: invalid options-template field lengths in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Invalid options template → throws")
+    void decode_invalidOptionsTemplate_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN + 10);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(1);
+        buf.writeShort(10);
+        buf.writeShort(257);
+        buf.writeShort(2);
+        buf.writeShort(4);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("Invalid NetFlow v9 options template");
+    }
+
+    // Test exception: options template does not contain all declared fields in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Truncated options template record → throws")
+    void decode_truncatedOptionsTemplateRecord_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(V9_HEADER_LEN + 14);
+        writeV9Header(buf, 0, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(1);
+        buf.writeShort(14);
+        buf.writeShort(257);
+        buf.writeShort(4);
+        buf.writeShort(4);
+        buf.writeShort(1);
+        buf.writeShort(4);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("options template record truncated");
+    }
+
+    // Test exception: template with zero-length records in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Invalid data record length → throws")
+    void decode_invalidDataRecordLength_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(64);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(0);
+        buf.writeShort(12);
+        buf.writeShort(256);
+        buf.writeShort(1);
+        buf.writeShort(8);
+        buf.writeShort(0);
+        buf.writeShort(256);
+        buf.writeShort(4);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("Invalid NetFlow v9 data record length");
+    }
+
+    // Test exception: non-zero data FlowSet padding in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Data FlowSet padding with non-zero bytes → throws")
+    void decode_nonZeroDataFlowSetPadding_throwsDecodeException() {
+        ByteBuf buf = Unpooled.buffer(128);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(0);
+        buf.writeShort(16);
+        buf.writeShort(256);
+        buf.writeShort(2);
+        buf.writeShort(8);
+        buf.writeShort(4);
+        buf.writeShort(12);
+        buf.writeShort(4);
+        buf.writeShort(256);
+        buf.writeShort(14);
+        buf.writeInt((int) 0x0A000001L);
+        buf.writeInt((int) 0xC0A80101L);
+        buf.writeByte(0x01);
+        buf.writeByte(0x02);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(NetFlowV9DecodeException.class)
+                .hasMessageContaining("data FlowSet padding");
+    }
+
+    // Test exception: known numeric field length above 8 bytes in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Unsupported numeric field length → throws")
+    void decode_unsupportedNumericFieldLength_throwsIllegalArgumentException() {
+        ByteBuf buf = Unpooled.buffer(128);
+        writeV9Header(buf, 1, SYS_UPTIME, UNIX_SECS, FLOW_SEQ, SOURCE_ID);
+        buf.writeShort(0);
+        buf.writeShort(12);
+        buf.writeShort(256);
+        buf.writeShort(1);
+        buf.writeShort(1);
+        buf.writeShort(9);
+        buf.writeShort(256);
+        buf.writeShort(13);
+        buf.writeBytes(new byte[9]);
+
+        assertThatThrownBy(() -> decoder.decode(buf, EXPORTER_IP, RECEIVED_AT))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported unsigned integer length");
+    }
+
+    // Test happy path: options-template data is skipped by NetFlowV9Decoder.
     @Test
     @DisplayName("Options template → data records for that template are skipped")
     void decode_optionsTemplate_skipsDataRecords() {
@@ -216,6 +392,7 @@ class NetFlowV9DecoderTest {
         assertThat(records).isEmpty();
     }
 
+    // Test happy path: later template definitions replace earlier ones in NetFlowV9Decoder.
     @Test
     @DisplayName("Template update replaces old template")
     void decode_templateUpdate_replacesOldTemplate() {
@@ -248,6 +425,7 @@ class NetFlowV9DecoderTest {
         assertThat(records.get(0).fields().get("dst_ip")).isEqualTo("192.168.2.2");
     }
 
+    // Test happy path: multiple data FlowSets are all decoded by NetFlowV9Decoder.
     @Test
     @DisplayName("Multiple data FlowSets → all records returned")
     void decode_multipleDataFlowSets_returnsAllRecords() {
@@ -262,6 +440,7 @@ class NetFlowV9DecoderTest {
         assertThat(records).hasSize(2);
     }
 
+    // Test happy path: zero trailing packet padding is accepted by NetFlowV9Decoder.
     @Test
     @DisplayName("Trailing zero padding after last FlowSet → accepted")
     void decode_paddingAfterRecords_accepted() {
@@ -275,6 +454,7 @@ class NetFlowV9DecoderTest {
         decoder.decode(buf, EXPORTER_IP, RECEIVED_AT);
     }
 
+    // Test exception: non-zero trailing partial FlowSet header in NetFlowV9Decoder.
     @Test
     @DisplayName("Non-zero trailing bytes → throws")
     void decode_nonZeroTrailingBytes_throwsException() {
@@ -290,6 +470,7 @@ class NetFlowV9DecoderTest {
                 .isInstanceOf(NetFlowV9DecodeException.class);
     }
 
+    // Test happy path: IPv4 template fields are decoded to dotted strings in NetFlowV9Decoder.
     @Test
     @DisplayName("IPv4 fields parsed as dotted-decimal strings")
     void decode_ipv4Fields_parsedAsStrings() {
@@ -304,6 +485,7 @@ class NetFlowV9DecoderTest {
         assertThat(f.get("dst_ip")).isEqualTo("8.8.8.8");
     }
 
+    // Test happy path: tcp_flags field is decoded as an Integer in NetFlowV9Decoder.
     @Test
     @DisplayName("tcp_flags field parsed as Integer")
     void decode_tcpFlagsField_parsedAsInt() {
@@ -317,6 +499,7 @@ class NetFlowV9DecoderTest {
         assertThat(f.get("tcp_flags")).isEqualTo(0x12);
     }
 
+    // Test happy path: switched timestamps produce start/end/duration fields in NetFlowV9Decoder.
     @Test
     @DisplayName("finishRecord computes ts_start, ts_end, duration_ms")
     void decode_finishRecord_computesTsStartTsEndDuration() {
@@ -332,6 +515,7 @@ class NetFlowV9DecoderTest {
         assertThat(f.get("duration_ms")).isEqualTo(1000L);  // 51000 - 50000
     }
 
+    // Test happy path: sampling interval field sets sampling metadata in NetFlowV9Decoder.
     @Test
     @DisplayName("Sampling interval field sets sampled flag")
     void decode_samplingIntervalField_setsSampledFlag() {
@@ -375,6 +559,7 @@ class NetFlowV9DecoderTest {
         assertThat(f.get("sampled")).isEqualTo(true);
     }
 
+    // Test exception: null packet argument in NetFlowV9Decoder.
     @Test
     @DisplayName("Null packet → NPE")
     void decode_nullPacket_throwsNPE() {
@@ -382,6 +567,23 @@ class NetFlowV9DecoderTest {
                 .isInstanceOf(NullPointerException.class);
     }
 
+    // Test exception: null exporter IP argument in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Null exporterIp → NPE")
+    void decode_nullExporterIp_throwsNPE() {
+        assertThatThrownBy(() -> decoder.decode(Unpooled.buffer(0), null, RECEIVED_AT))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    // Test exception: null receivedAt argument in NetFlowV9Decoder.
+    @Test
+    @DisplayName("Null receivedAt → NPE")
+    void decode_nullReceivedAt_throwsNPE() {
+        assertThatThrownBy(() -> decoder.decode(Unpooled.buffer(0), EXPORTER_IP, null))
+                .isInstanceOf(NullPointerException.class);
+    }
+
+    // Test happy path: exporter key includes port when NetFlowV9Decoder receives a port.
     @Test
     @DisplayName("Exporter key includes port when port >= 0")
     void decode_exporterKeyWithPort() {
@@ -395,6 +597,7 @@ class NetFlowV9DecoderTest {
         assertThat(records).hasSize(1);
     }
 
+    // Test happy path: exporter key omits port when NetFlowV9Decoder receives -1.
     @Test
     @DisplayName("Exporter key is just IP when port = -1")
     void decode_exporterKeyWithoutPort() {

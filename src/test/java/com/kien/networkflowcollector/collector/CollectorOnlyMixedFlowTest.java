@@ -2,6 +2,7 @@ package com.kien.networkflowcollector.collector;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.kien.networkflowcollector.kafka.PublishBackpressureException;
 import com.kien.networkflowcollector.plugins.netflow.NetFlowCollector;
 import com.kien.networkflowcollector.plugins.suricata.SuricataCollector;
 import com.kien.networkflowcollector.plugins.zeek.ZeekCollector;
@@ -26,7 +27,9 @@ import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.CleanupMode;
@@ -108,6 +111,39 @@ class CollectorOnlyMixedFlowTest {
             for (int index = started.size() - 1; index >= 0; index--) {
                 started.get(index).stop();
             }
+        }
+    }
+
+    @Test
+    void netflowCollectorRetriesTransientPublishBackpressure() throws Exception {
+        int netflowPort = freeUdpPort();
+        BackpressureThenSuccessPublisher publisher = new BackpressureThenSuccessPublisher();
+        NetFlowCollector netflow = new NetFlowCollector();
+
+        try {
+            netflow.init(
+                    new CollectorConfig(
+                            true,
+                            Map.of(
+                                    "bindAddress", "127.0.0.1",
+                                    "port", netflowPort,
+                                    "workerThreads", 1,
+                                    "packetQueueCapacity", 16,
+                                    "publishBackpressureRetryAttempts", 3,
+                                    "publishBackpressureRetryDelayMs", 1)),
+                    publisher);
+            netflow.start();
+
+            sendNetFlowPackets(netflowPort, 1);
+
+            assertThat(publisher.awaitRecord(Duration.ofSeconds(5))).isTrue();
+            assertThat(publisher.attempts()).isEqualTo(2);
+            assertThat(awaitHealthMessage(netflow, Duration.ofSeconds(5)))
+                    .contains("records=1")
+                    .contains("publish_errors=0")
+                    .contains("publish_backpressure_retries=1");
+        } finally {
+            netflow.stop();
         }
     }
 
@@ -257,6 +293,21 @@ class CollectorOnlyMixedFlowTest {
         assertThat(publisher.snapshot()).hasSize(expectedCount);
     }
 
+    private static String awaitHealthMessage(NetFlowCollector netflow, Duration timeout) throws InterruptedException {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        String message = netflow.health().message();
+        while (System.nanoTime() < deadline) {
+            message = netflow.health().message();
+            if (message.contains("records=1")
+                    && message.contains("publish_errors=0")
+                    && message.contains("publish_backpressure_retries=1")) {
+                return message;
+            }
+            TimeUnit.MILLISECONDS.sleep(25);
+        }
+        return message;
+    }
+
     private enum Source {
         SURICATA,
         ZEEK,
@@ -279,6 +330,29 @@ class CollectorOnlyMixedFlowTest {
 
         List<RawFlowRecord> snapshot() {
             return List.copyOf(records);
+        }
+    }
+
+    private static final class BackpressureThenSuccessPublisher implements FlowPublisher {
+
+        private final AtomicInteger attempts = new AtomicInteger();
+        private final CountDownLatch published = new CountDownLatch(1);
+
+        @Override
+        public CompletionStage<Void> publish(RawFlowRecord record) {
+            if (attempts.incrementAndGet() == 1) {
+                return CompletableFuture.failedFuture(new PublishBackpressureException("no permits"));
+            }
+            published.countDown();
+            return CompletableFuture.completedFuture(null);
+        }
+
+        boolean awaitRecord(Duration timeout) throws InterruptedException {
+            return published.await(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        }
+
+        int attempts() {
+            return attempts.get();
         }
     }
 }

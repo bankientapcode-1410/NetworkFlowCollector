@@ -78,10 +78,10 @@ public class KafkaFlowProperties {
         private Duration retryBackoffMs = Duration.ofMillis(200);
         private Duration deliveryTimeoutMs = Duration.ofMinutes(2);
         private Duration requestTimeoutMs = Duration.ofSeconds(30);
-        private Duration lingerMs = Duration.ofMillis(5);
-        private int batchSizeBytes = 32_768;
+        private Duration lingerMs = Duration.ofMillis(10);
+        private int batchSizeBytes = 131_072;
         private int maxInFlightRequestsPerConnection = 5;
-        private int maxInFlightPublishes = 10_000;
+        private int maxInFlightPublishes = 50_000;
     }
 
     @Getter

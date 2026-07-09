@@ -71,6 +71,7 @@ class RestFlowNormalizerTest {
         assertThat(flow.packetsTotal()).isEqualTo(4);
     }
 
+    // Verifies unsupported source types are rejected before REST normalization.
     @Test
     void rejectsUnsupportedSourceType() {
         RawFlowRecord raw =
